@@ -10,26 +10,34 @@ use Illuminate\Http\Request;
 
 class DepartmentController extends Controller
 {
-    public function index(Request $request): JsonResponse
+    public function index(Request $request)
     {
-        $query = Department::with('parent');
+        // 1. Explicitly fetch specific primitive data types to avoid passing arrays into query builders
+        $perPage = $request->integer('per_page', 10);
+        $search = $request->string('search')->trim();
+        $status = $request->string('status')->trim();
 
-        if ($request->filled('search')) {
-            $query->where(function ($q) use ($request) {
-                $q->where('name', 'like', "%{$request->search}%")
-                  ->orWhere('code', 'like', "%{$request->search}%");
+        $query = Department::with([
+            'parent'
+        ])->withCount('employees');
+
+        // 2. Safe check against string lengths instead of raw request object extraction
+        if ($search->isNotEmpty()) {
+            $query->where(function ($q) use ($search) {
+                $q->where('name', 'like', "%{$search}%")
+                  ->orWhere('code', 'like', "%{$search}%");
             });
         }
 
-        if ($request->filled('status')) {
-            $query->where('status', $request->status);
+        if ($status->isNotEmpty()) {
+            $query->where('status', $status);
         }
 
-        $departments = $query->orderBy('name')->get();
+        $departments = $query
+            ->orderBy('name')
+            ->paginate($perPage); // 👈 Dynamically uses your project global per_page property 
 
-        return response()->json([
-            'data' => DepartmentResource::collection($departments),
-        ]);
+        return DepartmentResource::collection($departments);
     }
 
     public function store(Request $request): JsonResponse
@@ -65,7 +73,8 @@ class DepartmentController extends Controller
 
     public function update(Request $request, Department $department): JsonResponse
     {
-        $request->validate([
+        // 1. Validate inputs thoroughly
+        $validatedData = $request->validate([
             'name'        => ['required', 'string', 'min:2', 'max:100', "unique:departments,name,{$department->id}"],
             'code'        => ['nullable', 'string', 'max:20', "unique:departments,code,{$department->id}"],
             'description' => ['nullable', 'string', 'max:500'],
@@ -73,11 +82,15 @@ class DepartmentController extends Controller
             'parent_id'   => ['nullable', 'exists:departments,id'],
         ]);
 
-        if ($request->parent_id && $request->parent_id === $department->id) {
-            return response()->json(['message' => 'A department cannot be its own parent.'], 422);
+        if ($request->parent_id && (int)$request->parent_id === $department->id) {
+            return response()->json([
+                'message' => 'A department cannot be its own parent.'
+            ], 422);
         }
 
-        $department->update($request->all());
+        // 💡 CRITICAL SAFETY FIX: Use only clean, validated data fields.
+        // This explicitly blocks 'page' or 'per_page' arrays from leaking into the update process.
+        $department->update($validatedData);
 
         return response()->json([
             'message' => 'Department updated successfully.',
@@ -101,6 +114,8 @@ class DepartmentController extends Controller
 
         $department->delete();
 
-        return response()->json(['message' => 'Department deleted successfully.']);
+        return response()->json([
+            'message' => 'Department deleted successfully.'
+        ]);
     }
 }

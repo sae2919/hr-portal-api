@@ -13,30 +13,58 @@ use Carbon\Carbon;
 
 class LeaveBalanceController extends Controller
 {
-    public function index(Request $request): JsonResponse
-    {
-        $employee_id = $request->get('employee_id');
-        $year        = $request->get('year', Carbon::now()->year);
+    public function index(Request $request)
+{
+    $user = auth()->user();
+    $isAdmin = $user->role === 'admin' || $user->tokenCan('manage leaves');
 
-        $balances = LeaveBalance::with('leaveType')
-                                ->where('employee_id', $employee_id)
-                                ->where('year', $year)
-                                ->get();
+    // Secure the target profile context scope
+    $employee_id = $isAdmin 
+        ? $request->get('employee_id') 
+        : ($user->employee_id ?? $user->employee->id);
 
-        return response()->json(['data' => LeaveBalanceResource::collection($balances)]);
-    }
+    $year = $request->get('year', Carbon::now()->year);
+
+    $balances = LeaveBalance::with('leaveType')
+        ->where('employee_id', $employee_id)
+        ->where('year', $year)
+        ->paginate($request->per_page ?? 10);
+
+    return LeaveBalanceResource::collection($balances);
+}
 
     // Initialize balances for all employees for a given year
-    public function initialize(Request $request): JsonResponse
-    {
-        $year  = $request->get('year', Carbon::now()->year);
-        $types = LeaveType::where('status', 'active')->get();
-        $emps  = Employee::where('status', 'active')->get();
+    public function initialize(
+        Request $request
+    ): JsonResponse {
+
+        $year = $request->get(
+            'year',
+            Carbon::now()->year
+        );
+
+        $types = LeaveType::where(
+            'status',
+            'active'
+        )->get();
+
+        $emps = Employee::where(
+            'status',
+            'active'
+        )->get();
 
         foreach ($emps as $emp) {
+
             foreach ($types as $type) {
+
                 LeaveBalance::firstOrCreate(
-                    ['employee_id' => $emp->id, 'leave_type_id' => $type->id, 'year' => $year],
+
+                    [
+                        'employee_id'   => $emp->id,
+                        'leave_type_id' => $type->id,
+                        'year'          => $year
+                    ],
+
                     [
                         'total_days'     => $type->days_per_year,
                         'used_days'      => 0,
@@ -46,6 +74,11 @@ class LeaveBalanceController extends Controller
             }
         }
 
-        return response()->json(['message' => "Leave balances initialized for {$year}."]);
+        return response()->json([
+
+            'message' =>
+                "Leave balances initialized for {$year}.",
+
+        ]);
     }
 }

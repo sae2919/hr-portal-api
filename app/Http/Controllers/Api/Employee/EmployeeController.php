@@ -10,39 +10,38 @@ use Illuminate\Http\Request;
 
 class EmployeeController extends Controller
 {
-    public function index(Request $request): JsonResponse
-    {
-        $query = Employee::with(['department', 'designation']);
+    public function index(Request $request)
+{
+    $query = Employee::with(['department', 'designation']);
 
-        if ($request->filled('search')) {
-            $query->where(function ($q) use ($request) {
-                $q->where('first_name', 'like', "%{$request->search}%")
-                  ->orWhere('last_name', 'like', "%{$request->search}%")
-                  ->orWhere('email', 'like', "%{$request->search}%")
-                  ->orWhere('employee_code', 'like', "%{$request->search}%")
-                  ->orWhere('phone', 'like', "%{$request->search}%");
-            });
-        }
-
-        if ($request->filled('department_id')) {
-            $query->where('department_id', $request->department_id);
-        }
-
-        if ($request->filled('status')) {
-            $query->where('status', $request->status);
-        }
-
-        if ($request->filled('employment_type')) {
-            $query->where('employment_type', $request->employment_type);
-        }
-
-        $employees = $query->orderBy('first_name')->get();
-
-        return response()->json([
-            'data' => EmployeeResource::collection($employees),
-        ]);
+    if ($request->filled('search')) {
+        $query->where(function ($q) use ($request) {
+            $q->where('first_name', 'like', "%{$request->search}%")
+              ->orWhere('last_name', 'like', "%{$request->search}%")
+              ->orWhere('email', 'like', "%{$request->search}%")
+              ->orWhere('employee_code', 'like', "%{$request->search}%")
+              ->orWhere('phone', 'like', "%{$request->search}%");
+        });
     }
 
+    if ($request->filled('department_id')) {
+        $query->where('department_id', $request->department_id);
+    }
+
+    if ($request->filled('status')) {
+        $query->where('status', $request->status);
+    }
+
+    if ($request->filled('employment_type')) {
+        $query->where('employment_type', $request->employment_type);
+    }
+
+    $employees = $query
+        ->orderBy('first_name')
+        ->paginate(10);
+
+    return EmployeeResource::collection($employees);
+}
     public function store(Request $request): JsonResponse
     {
         $request->validate([
@@ -51,6 +50,11 @@ class EmployeeController extends Controller
             'email'           => ['required', 'email', 'unique:employees,email'],
             'phone'           => ['nullable', 'string', 'max:20'],
             'gender'          => ['nullable', 'in:male,female,other'],
+            'blood_group' => [
+    'nullable',
+    'string',
+    'max:10'
+],
             'dob'             => ['nullable', 'date'],
             'address'         => ['nullable', 'string'],
             'city'            => ['nullable', 'string'],
@@ -100,6 +104,11 @@ class EmployeeController extends Controller
             'email'           => ['sometimes', 'email', "unique:employees,email,{$employee->id}"],
             'phone'           => ['nullable', 'string', 'max:20'],
             'gender'          => ['nullable', 'in:male,female,other'],
+            'blood_group' => [
+    'nullable',
+    'string',
+    'max:10'
+],
             'dob'             => ['nullable', 'date'],
             'department_id'   => ['nullable', 'exists:departments,id'],
             'designation_id'  => ['nullable', 'exists:designations,id'],

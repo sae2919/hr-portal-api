@@ -18,6 +18,7 @@ class EmployeeResource extends JsonResource
             'email'           => $this->email,
             'phone'           => $this->phone,
             'gender'          => $this->gender,
+            'blood_group' => $this->blood_group,
             'dob'             => $this->dob?->toDateString(),
             'address'         => $this->address,
             'city'            => $this->city,

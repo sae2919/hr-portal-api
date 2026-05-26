@@ -11,16 +11,24 @@ class DesignationResource extends JsonResource
     {
         return [
             'id'             => $this->id,
+
             'title'          => $this->title,
+
             'code'           => $this->code,
+
             'description'    => $this->description,
+
             'status'         => $this->status,
+
             'department_id'  => $this->department_id,
-            'department'     => $this->whenLoaded('department', fn() => [
+
+            'department' => $this->department ? [
                 'id'   => $this->department->id,
                 'name' => $this->department->name,
-            ]),
+            ] : null,
+
             'employee_count' => 0,
+
             'created_at'     => $this->created_at->toDateString(),
         ];
     }

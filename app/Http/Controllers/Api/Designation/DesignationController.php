@@ -10,7 +10,7 @@ use Illuminate\Http\Request;
 
 class DesignationController extends Controller
 {
-    public function index(Request $request): JsonResponse
+    public function index(Request $request)
     {
         $query = Designation::with('department');
 
@@ -29,11 +29,11 @@ class DesignationController extends Controller
             $query->where('department_id', $request->department_id);
         }
 
-        $designations = $query->orderBy('title')->get();
+        $designations = $query
+            ->orderBy('title')
+            ->paginate(10);
 
-        return response()->json([
-            'data' => DesignationResource::collection($designations),
-        ]);
+        return DesignationResource::collection($designations);
     }
 
     public function store(Request $request): JsonResponse

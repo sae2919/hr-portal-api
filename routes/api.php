@@ -1,46 +1,86 @@
 <?php
 
+use Illuminate\Support\Facades\Route;
+
 use App\Http\Controllers\Api\Auth\AuthController;
 use App\Http\Controllers\Api\Auth\ForgotPasswordController;
 use App\Http\Controllers\Api\Auth\ResetPasswordController;
-use Illuminate\Support\Facades\Route;
+
+use App\Http\Controllers\Api\RecruitmentController;
+use App\Http\Controllers\Api\PayrollController;
+use App\Http\Controllers\Api\DashboardController;
+use App\Http\Controllers\Api\WorkspaceController;
+use App\Http\Controllers\Api\Department\DepartmentController;
+use App\Http\Controllers\Api\Designation\DesignationController;
+use App\Http\Controllers\Api\Employee\EmployeeController;
+use App\Http\Controllers\Api\Attendance\AttendanceController;
+
+use App\Http\Controllers\Api\Leave\LeaveTypeController;
+use App\Http\Controllers\Api\Leave\LeaveController;
+use App\Http\Controllers\Api\Leave\LeaveBalanceController;
 
 Route::prefix('v1')->group(function () {
 
-    // ── Public Auth Routes ────────────────────────────────────────
-    Route::post('/login',          [AuthController::class, 'login']);
-    Route::post('/forgot-password',[ForgotPasswordController::class, 'sendResetLink']);
+    // ─────────────────────────────────────────────
+    // Public Auth Routes
+    // ─────────────────────────────────────────────
+    Route::post('/login', [AuthController::class, 'login']);
+    Route::post('/forgot-password', [ForgotPasswordController::class, 'sendResetLink']);
     Route::post('/reset-password', [ResetPasswordController::class, 'reset']);
-Route::apiResource('departments', \App\Http\Controllers\Api\Department\DepartmentController::class);
-Route::apiResource('designations', \App\Http\Controllers\Api\Designation\DesignationController::class);
-Route::apiResource('employees', \App\Http\Controllers\Api\Employee\EmployeeController::class);
-// Attendance
-Route::post('attendance/checkin',  [\App\Http\Controllers\Api\Attendance\AttendanceController::class, 'checkIn']);
-Route::post('attendance/checkout', [\App\Http\Controllers\Api\Attendance\AttendanceController::class, 'checkOut']);
-Route::get('attendance/report/monthly', [\App\Http\Controllers\Api\Attendance\AttendanceController::class, 'monthlyReport']);
-Route::apiResource('attendance', \App\Http\Controllers\Api\Attendance\AttendanceController::class);
-    // ── Protected Routes ──────────────────────────────────────────
+
+    // ─────────────────────────────────────────────
+    // Public/Custom Authenticated Routes
+    // ─────────────────────────────────────────────
+    // FIXED: Placed outside Sanctum middleware to support native query parameter token pass-throughs
+    Route::get('/payrolls/{payroll}/payslip', [PayrollController::class, 'downloadPayslip']);
+
+    // ─────────────────────────────────────────────
+    // Protected Routes (Requires Sanctum Authentication)
+    // ─────────────────────────────────────────────
     Route::middleware('auth:sanctum')->group(function () {
-        // Leave Types
-Route::apiResource('leave-types', \App\Http\Controllers\Api\Leave\LeaveTypeController::class);
 
-// Leaves
-Route::get('leaves',    [\App\Http\Controllers\Api\Leave\LeaveController::class, 'index']);
-Route::post('leaves',   [\App\Http\Controllers\Api\Leave\LeaveController::class, 'store']);
-Route::get('leaves/{leave}',    [\App\Http\Controllers\Api\Leave\LeaveController::class, 'show']);
-Route::delete('leaves/{leave}', [\App\Http\Controllers\Api\Leave\LeaveController::class, 'destroy']);
-Route::patch('leaves/{leave}/approve', [\App\Http\Controllers\Api\Leave\LeaveController::class, 'approve']);
-Route::patch('leaves/{leave}/reject',  [\App\Http\Controllers\Api\Leave\LeaveController::class, 'reject']);
+        // ── Auth User Context Profile (FIX FOR NEXT.JS 404 ERROR) ──
+        Route::get('/user', function (Illuminate\Http\Request $request) {
+            return $request->user();
+        });
 
-// Leave Balances
-Route::get('leave-balances',         [\App\Http\Controllers\Api\Leave\LeaveBalanceController::class, 'index']);
-Route::post('leave-balances/initialize', [\App\Http\Controllers\Api\Leave\LeaveBalanceController::class, 'initialize']);
+        // ── Dashboard & Workspace Core Metrics ──
+        Route::get('/dashboard/stats', [DashboardController::class, 'stats']);
+        Route::get('/workspace/stats', [WorkspaceController::class, 'stats']);
 
-        // Auth
-        Route::get('/me',          [AuthController::class, 'me']);
-        Route::post('/logout',     [AuthController::class, 'logout']);
-        Route::post('/logout-all', [AuthController::class, 'logoutAll']);
+        // ── Recruitment Routes ──
+        Route::get('/recruitment/dashboard', [RecruitmentController::class, 'dashboard']);
+        Route::patch('/candidates/{candidateId}/status', [RecruitmentController::class, 'updateStatus']);
 
-        // All other module routes go here as we build them
+        // ── Structural Resource Routes ──
+        Route::apiResource('departments', DepartmentController::class);
+        Route::apiResource('designations', DesignationController::class);
+        Route::apiResource('employees', EmployeeController::class);
+
+        // ── Attendance Routes ──
+        Route::get('attendance/worksheet', [AttendanceController::class, 'worksheet']); 
+        Route::post('attendance/bulk-store', [AttendanceController::class, 'bulkStore']); 
+        Route::post('attendance/checkin', [AttendanceController::class, 'checkIn']);
+        Route::post('attendance/checkout', [AttendanceController::class, 'checkOut']);
+        Route::get('attendance/report/monthly', [AttendanceController::class, 'monthlyReport']);
+        Route::apiResource('attendance', AttendanceController::class);
+
+        // ── Payroll & Request Management Routes ──
+        Route::get('/payrolls', [PayrollController::class, 'index']);
+        Route::post('/payrolls/{payroll}/mark-paid', [PayrollController::class, 'markPaid']);
+        Route::post('/payrolls/{payroll}/send-email', [PayrollController::class, 'sendEmail']);
+        Route::post('/payrolls/{payroll}/request-payslip', [PayrollController::class, 'requestPayslip']);
+        
+        // Registered Admin workflow routes for handling employee payslip requests
+        Route::get('/payroll-requests', [PayrollController::class, 'indexRequests']);
+        Route::patch('/payroll-requests/{id}/fulfill', [PayrollController::class, 'fulfillRequest']);
+
+        // ── Leave Management Routes ──
+        Route::patch('leaves/{leave}/approve', [LeaveController::class, 'approve']); 
+        Route::patch('leaves/{leave}/reject',  [LeaveController::class, 'reject']);
+        Route::apiResource('leave-types', LeaveTypeController::class);
+        Route::apiResource('leave-balances', LeaveBalanceController::class);
+        Route::apiResource('leaves', LeaveController::class);
+        
     });
 });

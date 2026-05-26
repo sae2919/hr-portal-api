@@ -40,17 +40,17 @@ class AuthController extends Controller
         // Update last login timestamp
         $user->update(['last_login_at' => now()]);
 
-        // Delete old tokens (single session — remove this
-        // line if you want multi-device login)
+        // Revoke older tokens to ensure clean single active session structure
         $user->tokens()->delete();
 
-        // Create new token
-        $token = $user->createToken('auth_token')->plainTextToken;
+        // Create new token string parameter safely
+        $plainTextToken = $user->createToken('auth_token')->plainTextToken;
 
-        return response()->json([
+       return response()->json([
             'message' => 'Login successful',
-            'token'   => $token,
-            'user'    => new UserResource($user),
+            'token'   => $plainTextToken, 
+            // FIXED: Send the raw user array containing your exact database updates directly
+            'user'    => $user, 
         ], 200);
     }
 
@@ -71,7 +71,6 @@ class AuthController extends Controller
      */
     public function logout(Request $request): JsonResponse
     {
-        // Revoke the token used for this request
         $request->user()->currentAccessToken()->delete();
 
         return response()->json([

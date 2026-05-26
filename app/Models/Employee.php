@@ -4,6 +4,8 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use App\Models\Payroll;
+use App\Models\SalaryStructure;
 
 class Employee extends Model
 {
@@ -16,6 +18,7 @@ class Employee extends Model
         'email',
         'phone',
         'gender',
+        'blood_group',
         'dob',
         'address',
         'city',
@@ -46,13 +49,83 @@ class Employee extends Model
 
     // ── Auto-generate employee code ───────────────────────────────
     protected static function booted(): void
-    {
-        static::creating(function (Employee $employee) {
-            if (empty($employee->employee_code)) {
-                $employee->employee_code = self::generateCode();
-            }
-        });
-    }
+{
+    static::created(function ($employee) {
+
+        $basic = 50000;
+
+        $hra = $basic * 0.40;
+        $allowances = 5000;
+        $bonus = 2000;
+
+        $gross = $basic + $hra + $allowances + $bonus;
+
+        $pf = $basic * 0.12;
+        $tax = $basic * 0.10;
+
+        $net = $gross - ($pf + $tax);
+
+        // ====================================
+        // Create Salary Structure
+        // ====================================
+
+        $salary = SalaryStructure::create([
+
+            'employee_id' => $employee->id,
+
+            'basic_salary' => $basic,
+
+            'hra' => $hra,
+
+            'allowances' => $allowances,
+
+            'bonus' => $bonus,
+
+            'pf_deduction' => $pf,
+
+            'tax_deduction' => $tax,
+
+            'other_deductions' => 0,
+
+            'gross_salary' => $gross,
+
+            'net_salary' => $net,
+
+            'effective_from' => now(),
+        ]);
+
+        // ====================================
+        // Create Payroll
+        // ====================================
+
+        Payroll::create([
+
+            'employee_id' => $employee->id,
+
+            'salary_structure_id' => $salary->id,
+
+            'month' => now()->month,
+
+            'year' => now()->year,
+
+            'working_days' => 22,
+
+            'present_days' => 22,
+
+            'leave_days' => 0,
+
+            'gross_salary' => $gross,
+
+            'total_deductions' => $pf + $tax,
+
+            'net_salary' => $net,
+
+            'status' => 'processed',
+
+            'processed_at' => now(),
+        ]);
+    });
+}
 
     private static function generateCode(): string
     {

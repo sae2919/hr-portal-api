@@ -10,11 +10,13 @@ use Illuminate\Http\Request;
 
 class LeaveTypeController extends Controller
 {
-    public function index(): JsonResponse
-    {
-        $types = LeaveType::orderBy('name')->get();
-        return response()->json(['data' => LeaveTypeResource::collection($types)]);
-    }
+    public function index()
+{
+    // Fetch all records sorted alphabetically for dropdown consistency
+    $types = LeaveType::orderBy('name')->get();
+    
+    return LeaveTypeResource::collection($types);
+}
 
     public function store(Request $request): JsonResponse
     {

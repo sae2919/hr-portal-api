@@ -33,6 +33,8 @@ Route::prefix('v1')->group(function () {
     // ─────────────────────────────────────────────
     // FIXED: Placed outside Sanctum middleware to support native query parameter token pass-throughs
     Route::get('/payrolls/{payroll}/payslip', [PayrollController::class, 'downloadPayslip']);
+Route::put('/v1/profile', [ProfileController::class, 'update']);
+Route::put('/v1/profile/password', [ProfileController::class, 'changePassword']);
 
     // ─────────────────────────────────────────────
     // Protected Routes (Requires Sanctum Authentication)
@@ -63,7 +65,9 @@ Route::prefix('v1')->group(function () {
         Route::post('attendance/checkin', [AttendanceController::class, 'checkIn']);
         Route::post('attendance/checkout', [AttendanceController::class, 'checkOut']);
         Route::get('attendance/report/monthly', [AttendanceController::class, 'monthlyReport']);
+        Route::get('attendance/my-calendar', [AttendanceController::class, 'myCalendar']);
         Route::apiResource('attendance', AttendanceController::class);
+        
 
         // ── Payroll & Request Management Routes ──
         Route::get('/payrolls', [PayrollController::class, 'index']);

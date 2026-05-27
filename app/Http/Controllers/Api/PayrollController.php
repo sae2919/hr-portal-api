@@ -134,7 +134,10 @@ class PayrollController extends Controller
         }
 
         // 4. Generate your PDF view stream output
-        $pdf = \PDF::loadView('emails.payslip', compact('payroll'));
+       $pdf = \PDF::loadView('pdf.payslip', [
+    'payroll'  => $payroll,
+    'employee' => $payroll->employee,
+]);
         
         $filename = "payslip-{$payroll->year}-{$payroll->month}-{$id}.pdf";
         return $pdf->stream($filename);

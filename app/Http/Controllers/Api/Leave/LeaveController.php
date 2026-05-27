@@ -12,19 +12,47 @@ use Carbon\Carbon;
 
 class LeaveController extends Controller
 {
+    // ── Role helpers ──────────────────────────────────────────────
+    private function isAdminOrHR(): bool
+    {
+        return auth()->user()->hasRole('admin') || auth()->user()->hasRole('hr');
+    }
+
+    private function isManager(): bool
+    {
+        return auth()->user()->hasRole('manager');
+    }
+
+    private function managerDeptId(): ?int
+    {
+        return auth()->user()->employee?->department_id;
+    }
+
     public function index(Request $request)
     {
         $user  = auth()->user();
         $query = Leave::with(['employee.department', 'leaveType']);
 
-        // Enforce strict table column role check
-        $isAdmin = $user && $user->role === 'admin';
+        if ($this->isAdminOrHR()) {
+            // Admin/HR: see all leaves
+            if ($request->filled('employee_id')) {
+                $query->where('employee_id', $request->employee_id);
+            }
+            if ($request->filled('department_id')) {
+                $query->whereHas('employee', fn($q) => $q->where('department_id', $request->department_id));
+            }
 
-        if (!$isAdmin) {
-            // Force isolation down to the current session profile
-            $query->where('employee_id', $user->employee_id ?? $user->employee->id);
-        } elseif ($request->filled('employee_id')) {
-            $query->where('employee_id', $request->employee_id);
+        } elseif ($this->isManager()) {
+            // Manager: only their department's leaves
+            $query->whereHas('employee', fn($q) => $q->where('department_id', $this->managerDeptId()));
+
+            if ($request->filled('employee_id')) {
+                $query->where('employee_id', $request->employee_id);
+            }
+
+        } else {
+            // Employee: only their own leaves
+            $query->where('employee_id', $user->employee?->id);
         }
 
         if ($request->filled('status')) {
@@ -35,29 +63,19 @@ class LeaveController extends Controller
             $query->where('leave_type_id', $request->leave_type_id);
         }
 
-        if ($request->filled('department_id')) {
-            $query->whereHas('employee', fn($q) =>
-                $q->where('department_id', $request->department_id)
-            );
-        }
-
-        $leaves = $query
-            ->orderBy('created_at', 'desc')
-            ->paginate($request->per_page ?? 10);
+        $leaves = $query->orderBy('created_at', 'desc')->paginate($request->per_page ?? 10);
 
         return LeaveResource::collection($leaves);
     }
 
     public function store(Request $request): JsonResponse
     {
-        $user = auth()->user();
-        
-        // FIXED: Enforce strict table role strings to overwrite wildcard API token abilities
-        $isAdmin = $user && $user->role === 'admin';
+        $user         = auth()->user();
+        $isAdminOrHR  = $this->isAdminOrHR();
 
-        // Force employee ID context onto non-administrative connections
-        if (!$isAdmin) {
-            $request->merge(['employee_id' => $user->employee_id ?? $user->employee->id]);
+        // Force employee_id for non-admin/hr
+        if (!$isAdminOrHR) {
+            $request->merge(['employee_id' => $user->employee?->id]);
         }
 
         $request->validate([
@@ -69,9 +87,8 @@ class LeaveController extends Controller
         ]);
 
         $startDate = Carbon::parse($request->start_date);
-        $days = Leave::calculateDays($request->start_date, $request->end_date);
+        $days      = Leave::calculateDays($request->start_date, $request->end_date);
 
-        // Validate Leave Balance
         $balance = LeaveBalance::where('employee_id', $request->employee_id)
                                ->where('leave_type_id', $request->leave_type_id)
                                ->where('year', $startDate->year)
@@ -83,12 +100,10 @@ class LeaveController extends Controller
             ], 422);
         }
 
-        $leave = null;
-
-        // FIXED: Explicitly map parameters to force strict execution constraints
-        $status     = $isAdmin ? 'approved' : 'pending';
-        $approvedBy = $isAdmin ? auth()->id() : null;
-        $approvedAt = $isAdmin ? now() : null;
+        $leave      = null;
+        $status     = $isAdminOrHR ? 'approved' : 'pending';
+        $approvedBy = $isAdminOrHR ? auth()->id() : null;
+        $approvedAt = $isAdminOrHR ? now() : null;
 
         \DB::transaction(function () use ($request, $days, $startDate, $status, $approvedBy, $approvedAt, &$leave) {
             $leave = Leave::create([
@@ -103,7 +118,6 @@ class LeaveController extends Controller
                 'approved_at'   => $approvedAt,
             ]);
 
-            // Deduct balance IMMEDIATELY to hold the requested days
             LeaveBalance::where('employee_id', $request->employee_id)
                         ->where('leave_type_id', $request->leave_type_id)
                         ->where('year', $startDate->year)
@@ -115,9 +129,9 @@ class LeaveController extends Controller
                         ->decrement('remaining_days', $days);
         });
 
-        $message = $isAdmin 
-            ? 'Leave added and automatically approved by Admin.' 
-            : 'Leave application submitted successfully. Pending approval.';
+        $message = $isAdminOrHR
+            ? 'Leave added and automatically approved.'
+            : 'Leave application submitted. Pending approval.';
 
         return response()->json([
             'message' => $message,
@@ -127,6 +141,17 @@ class LeaveController extends Controller
 
     public function approve(Request $request, Leave $leave): JsonResponse
     {
+        // Admin, HR, or Manager (only for their dept) can approve
+        if (!$this->isAdminOrHR()) {
+            if ($this->isManager()) {
+                if ($leave->employee->department_id !== $this->managerDeptId()) {
+                    return response()->json(['message' => 'Unauthorized.'], 403);
+                }
+            } else {
+                return response()->json(['message' => 'Unauthorized.'], 403);
+            }
+        }
+
         if ($leave->status !== 'pending') {
             return response()->json(['message' => 'Only pending leaves can be approved.'], 422);
         }
@@ -145,9 +170,18 @@ class LeaveController extends Controller
 
     public function reject(Request $request, Leave $leave): JsonResponse
     {
-        $request->validate([
-            'rejection_reason' => ['required', 'string', 'min:5'],
-        ]);
+        // Admin, HR, or Manager (only for their dept) can reject
+        if (!$this->isAdminOrHR()) {
+            if ($this->isManager()) {
+                if ($leave->employee->department_id !== $this->managerDeptId()) {
+                    return response()->json(['message' => 'Unauthorized.'], 403);
+                }
+            } else {
+                return response()->json(['message' => 'Unauthorized.'], 403);
+            }
+        }
+
+        $request->validate(['rejection_reason' => ['required', 'string', 'min:5']]);
 
         if ($leave->status !== 'pending') {
             return response()->json(['message' => 'Only pending leaves can be rejected.'], 422);
@@ -161,7 +195,6 @@ class LeaveController extends Controller
                 'approved_at'      => now(),
             ]);
 
-            // REFUND DAYS back to balance if rejected
             $year = Carbon::parse($leave->start_date)->year;
 
             LeaveBalance::where('employee_id', $leave->employee_id)
@@ -176,13 +209,20 @@ class LeaveController extends Controller
         });
 
         return response()->json([
-            'message' => 'Leave application rejected. Allocation days refunded.',
+            'message' => 'Leave rejected. Balance refunded.',
             'data'    => new LeaveResource($leave->load(['employee', 'leaveType'])),
         ]);
     }
 
     public function destroy(Leave $leave): JsonResponse
     {
+        $user = auth()->user();
+
+        // Only admin/HR or the employee themselves can delete
+        if (!$this->isAdminOrHR() && $leave->employee_id !== $user->employee?->id) {
+            return response()->json(['message' => 'Unauthorized.'], 403);
+        }
+
         if ($leave->status === 'approved') {
             return response()->json(['message' => 'Cannot delete approved leaves.'], 422);
         }
@@ -205,6 +245,6 @@ class LeaveController extends Controller
             $leave->delete();
         });
 
-        return response()->json(['message' => 'Leave entry dropped successfully.']);
+        return response()->json(['message' => 'Leave deleted successfully.']);
     }
 }

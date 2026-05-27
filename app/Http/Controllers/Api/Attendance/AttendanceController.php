@@ -13,52 +13,64 @@ use Carbon\Carbon;
 
 class AttendanceController extends Controller
 {
-    // ── Helper: check if the current user is an admin ─────────────
-    private function isAdmin(): bool
+    // ── Role helpers ──────────────────────────────────────────────
+    private function isAdminOrHR(): bool
     {
-        $user = auth()->user();
-        return $user && ($user->role === 'admin' || $user->tokenCan('manage attendance'));
+        return auth()->user()->hasRole('admin') || auth()->user()->hasRole('hr');
+    }
+
+    private function isManager(): bool
+    {
+        return auth()->user()->hasRole('manager');
+    }
+
+    private function managerDeptId(): ?int
+    {
+        return auth()->user()->employee?->department_id;
     }
 
     // ── GET /api/v1/attendance ────────────────────────────────────
     public function index(Request $request): AnonymousResourceCollection
     {
+        $user  = auth()->user();
         $query = Attendance::with(['employee.department']);
 
-        // Non-admins are always scoped to their own record
-        if (!$this->isAdmin()) {
-            $employeeId = auth()->user()->employee?->id;
-            if (!$employeeId) {
-                abort(403, 'Employee record not found.');
+        if ($this->isAdminOrHR()) {
+            // Admin/HR: see all, with optional filters
+            if ($request->filled('employee_id')) {
+                $query->where('employee_id', $request->employee_id);
             }
+            if ($request->filled('department_id')) {
+                $query->whereHas('employee', fn($q) => $q->where('department_id', $request->department_id));
+            }
+
+        } elseif ($this->isManager()) {
+            // Manager: only their department
+            $deptId = $this->managerDeptId();
+            $query->whereHas('employee', fn($q) => $q->where('department_id', $deptId));
+
+            if ($request->filled('employee_id')) {
+                $query->where('employee_id', $request->employee_id);
+            }
+
+        } else {
+            // Employee: only own attendance
+            $employeeId = $user->employee?->id;
+            if (!$employeeId) abort(403, 'Employee record not found.');
             $query->where('employee_id', $employeeId);
-        } elseif ($request->filled('employee_id')) {
-            $query->where('employee_id', $request->employee_id);
         }
 
         if ($request->filled('date')) {
             $query->whereDate('date', $request->date);
         }
-
         if ($request->filled('month') && $request->filled('year')) {
-            $query->whereMonth('date', $request->month)
-                  ->whereYear('date', $request->year);
+            $query->whereMonth('date', $request->month)->whereYear('date', $request->year);
         }
-
         if ($request->filled('status')) {
             $query->where('status', $request->status);
         }
 
-        if ($this->isAdmin() && $request->filled('department_id')) {
-            $query->whereHas('employee', function ($q) use ($request) {
-                $q->where('department_id', $request->department_id);
-            });
-        }
-
-        $attendance = $query
-            ->orderBy('date', 'desc')
-            ->orderBy('employee_id')
-            ->paginate($request->per_page ?? 10);
+        $attendance = $query->orderBy('date', 'desc')->orderBy('employee_id')->paginate($request->per_page ?? 10);
 
         return AttendanceResource::collection($attendance);
     }
@@ -76,9 +88,21 @@ class AttendanceController extends Controller
             'note'           => ['nullable', 'string', 'max:500'],
         ]);
 
-        // Non-admins can only save their own attendance
-        if (!$this->isAdmin()) {
-            $employeeId = auth()->user()->employee?->id;
+        $user = auth()->user();
+
+        if ($this->isAdminOrHR()) {
+            // Full access
+
+        } elseif ($this->isManager()) {
+            // Manager: only for their dept employees
+            $employee = Employee::find($request->employee_id);
+            if ($employee->department_id !== $this->managerDeptId()) {
+                return response()->json(['message' => 'You can only manage attendance for your department.'], 403);
+            }
+
+        } else {
+            // Employee: only themselves
+            $employeeId = $user->employee?->id;
             if ((int) $request->employee_id !== $employeeId) {
                 return response()->json(['message' => 'You can only manage your own attendance.'], 403);
             }
@@ -104,24 +128,36 @@ class AttendanceController extends Controller
     // ── GET /api/v1/attendance/{attendance} ───────────────────────
     public function show(Attendance $attendance): JsonResponse
     {
-        if (!$this->isAdmin()) {
-            $employeeId = auth()->user()->employee?->id;
-            if ($attendance->employee_id !== $employeeId) {
+        $user = auth()->user();
+
+        if ($this->isAdminOrHR()) {
+            // Full access
+        } elseif ($this->isManager()) {
+            if ($attendance->employee->department_id !== $this->managerDeptId()) {
+                return response()->json(['message' => 'Forbidden.'], 403);
+            }
+        } else {
+            if ($attendance->employee_id !== $user->employee?->id) {
                 return response()->json(['message' => 'Forbidden.'], 403);
             }
         }
 
-        return response()->json([
-            'data' => new AttendanceResource($attendance->load('employee.department')),
-        ]);
+        return response()->json(['data' => new AttendanceResource($attendance->load('employee.department'))]);
     }
 
     // ── PUT /api/v1/attendance/{attendance} ───────────────────────
     public function update(Request $request, Attendance $attendance): JsonResponse
     {
-        if (!$this->isAdmin()) {
-            $employeeId = auth()->user()->employee?->id;
-            if ($attendance->employee_id !== $employeeId) {
+        $user = auth()->user();
+
+        if ($this->isAdminOrHR()) {
+            // Full access
+        } elseif ($this->isManager()) {
+            if ($attendance->employee->department_id !== $this->managerDeptId()) {
+                return response()->json(['message' => 'Forbidden.'], 403);
+            }
+        } else {
+            if ($attendance->employee_id !== $user->employee?->id) {
                 return response()->json(['message' => 'Forbidden.'], 403);
             }
         }
@@ -145,11 +181,8 @@ class AttendanceController extends Controller
     // ── DELETE /api/v1/attendance/{attendance} ────────────────────
     public function destroy(Attendance $attendance): JsonResponse
     {
-        if (!$this->isAdmin()) {
-            $employeeId = auth()->user()->employee?->id;
-            if ($attendance->employee_id !== $employeeId) {
-                return response()->json(['message' => 'Forbidden.'], 403);
-            }
+        if (!$this->isAdminOrHR()) {
+            return response()->json(['message' => 'Only Admin/HR can delete attendance records.'], 403);
         }
 
         $attendance->delete();
@@ -159,13 +192,12 @@ class AttendanceController extends Controller
     // ── POST /api/v1/attendance/checkin ───────────────────────────
     public function checkIn(Request $request): JsonResponse
     {
-        $request->validate([
-            'employee_id' => ['required', 'exists:employees,id'],
-        ]);
+        $request->validate(['employee_id' => ['required', 'exists:employees,id']]);
 
-        // Non-admins can only check in as themselves
-        if (!$this->isAdmin()) {
-            $employeeId = auth()->user()->employee?->id;
+        $user = auth()->user();
+
+        if (!$this->isAdminOrHR()) {
+            $employeeId = $user->employee?->id;
             if ((int) $request->employee_id !== $employeeId) {
                 return response()->json(['message' => 'You can only check in for yourself.'], 403);
             }
@@ -188,23 +220,19 @@ class AttendanceController extends Controller
     // ── POST /api/v1/attendance/checkout ──────────────────────────
     public function checkOut(Request $request): JsonResponse
     {
-        $request->validate([
-            'employee_id' => ['required', 'exists:employees,id'],
-        ]);
+        $request->validate(['employee_id' => ['required', 'exists:employees,id']]);
 
-        // Non-admins can only check out as themselves
-        if (!$this->isAdmin()) {
-            $employeeId = auth()->user()->employee?->id;
+        $user = auth()->user();
+
+        if (!$this->isAdminOrHR()) {
+            $employeeId = $user->employee?->id;
             if ((int) $request->employee_id !== $employeeId) {
                 return response()->json(['message' => 'You can only check out for yourself.'], 403);
             }
         }
 
-        $today = Carbon::today()->toDateString();
-
-        $attendance = Attendance::where('employee_id', $request->employee_id)
-                                ->whereDate('date', $today)
-                                ->first();
+        $today      = Carbon::today()->toDateString();
+        $attendance = Attendance::where('employee_id', $request->employee_id)->whereDate('date', $today)->first();
 
         if (!$attendance) {
             return response()->json(['message' => 'No check-in found for today.'], 422);
@@ -224,24 +252,25 @@ class AttendanceController extends Controller
     {
         $month = $request->get('month', Carbon::now()->month);
         $year  = $request->get('year',  Carbon::now()->year);
+        $user  = auth()->user();
 
         $employeeQuery = Employee::with(['department'])->where('status', 'active');
 
-        // Non-admins only see their own monthly summary
-        if (!$this->isAdmin()) {
-            $employeeId = auth()->user()->employee?->id;
-            if (!$employeeId) {
-                return response()->json(['message' => 'Employee record not found.'], 403);
+        if ($this->isAdminOrHR()) {
+            if ($request->filled('employee_id')) {
+                $employeeQuery->where('id', $request->employee_id);
             }
+        } elseif ($this->isManager()) {
+            $employeeQuery->where('department_id', $this->managerDeptId());
+        } else {
+            $employeeId = $user->employee?->id;
+            if (!$employeeId) return response()->json(['message' => 'Employee record not found.'], 403);
             $employeeQuery->where('id', $employeeId);
-        } elseif ($request->filled('employee_id')) {
-            $employeeQuery->where('id', $request->employee_id);
         }
 
         $employees = $employeeQuery->paginate(10);
 
         $report = $employees->getCollection()->map(function (Employee $employee) use ($month, $year) {
-            // Fixed: use get() not paginate() inside map
             $records = Attendance::where('employee_id', $employee->id)
                                  ->whereMonth('date', $month)
                                  ->whereYear('date', $year)
@@ -261,14 +290,10 @@ class AttendanceController extends Controller
             ];
         });
 
-        return response()->json([
-            'month' => $month,
-            'year'  => $year,
-            'data'  => $report,
-        ]);
+        return response()->json(['month' => $month, 'year' => $year, 'data' => $report]);
     }
 
-    // ── GET /api/v1/attendance/worksheet ─────────────────────────
+    // ── GET /api/v1/attendance/worksheet ──────────────────────────
     public function worksheet(Request $request): JsonResponse
     {
         $request->validate([
@@ -278,6 +303,7 @@ class AttendanceController extends Controller
 
         $date    = $request->date;
         $perPage = $request->per_page ?? 10;
+        $user    = auth()->user();
 
         $employeeQuery = \DB::table('employees')
             ->leftJoin('departments', 'employees.department_id', '=', 'departments.id')
@@ -299,15 +325,16 @@ class AttendanceController extends Controller
                 \DB::raw('CASE WHEN attendances.id IS NOT NULL THEN 1 ELSE 0 END as is_saved'),
             ]);
 
-        // Non-admins only see their own row
-        if (!$this->isAdmin()) {
-            $employeeId = auth()->user()->employee?->id;
-            if (!$employeeId) {
-                return response()->json(['message' => 'Employee record not found.'], 403);
+        if ($this->isAdminOrHR()) {
+            if ($request->filled('employee_id')) {
+                $employeeQuery->where('employees.id', $request->employee_id);
             }
+        } elseif ($this->isManager()) {
+            $employeeQuery->where('employees.department_id', $this->managerDeptId());
+        } else {
+            $employeeId = $user->employee?->id;
+            if (!$employeeId) return response()->json(['message' => 'Employee record not found.'], 403);
             $employeeQuery->where('employees.id', $employeeId);
-        } elseif ($request->filled('employee_id')) {
-            $employeeQuery->where('employees.id', $request->employee_id);
         }
 
         $employees = $employeeQuery->paginate($perPage);
@@ -315,7 +342,6 @@ class AttendanceController extends Controller
         $employees->getCollection()->transform(function ($row) use ($date) {
             $fullName = trim(($row->first_name ?? '') . ' ' . ($row->last_name ?? ''));
 
-            // Check for approved leave covering this date
             $leave = \DB::table('leaves')
                 ->where('employee_id', $row->employee_id)
                 ->where('status', 'approved')
@@ -354,8 +380,8 @@ class AttendanceController extends Controller
     // ── POST /api/v1/attendance/bulk-store ────────────────────────
     public function bulkStore(Request $request): JsonResponse
     {
-        // Only admins can bulk-save the full sheet
-        if (!$this->isAdmin()) {
+        // Admin/HR/Manager can bulk save
+        if (!$this->isAdminOrHR() && !$this->isManager()) {
             return response()->json(['message' => 'Forbidden.'], 403);
         }
 
@@ -372,9 +398,16 @@ class AttendanceController extends Controller
 
         $date         = $request->date;
         $updatedCount = 0;
+        $deptId       = $this->isManager() ? $this->managerDeptId() : null;
 
-        \DB::transaction(function () use ($request, $date, &$updatedCount) {
+        \DB::transaction(function () use ($request, $date, $deptId, &$updatedCount) {
             foreach ($request->records as $record) {
+                // Manager: skip employees outside their dept
+                if ($deptId) {
+                    $employee = Employee::find($record['employee_id']);
+                    if ($employee->department_id !== $deptId) continue;
+                }
+
                 Attendance::updateOrCreate(
                     ['employee_id' => $record['employee_id'], 'date' => $date],
                     [
@@ -394,4 +427,105 @@ class AttendanceController extends Controller
             'count'   => $updatedCount,
         ]);
     }
+    public function myCalendar(Request $request): JsonResponse
+{
+    $user  = auth()->user();
+    $year  = (int) $request->query('year',  now()->year);
+    $month = (int) $request->query('month', now()->month);
+ 
+    $employee = $user->employee;
+if (!$employee) {
+    return response()->json(['message' => 'Employee record not found.'], 404);
+}
+ 
+    $start = \Carbon\Carbon::createFromDate($year, $month, 1)->startOfMonth();
+    $end   = $start->copy()->endOfMonth();
+    $today = \Carbon\Carbon::today();
+ 
+    // Fetch all rows for this employee this month
+    $rows = \DB::table('attendances')
+        ->where('employee_id', $employee->id)
+        ->whereBetween('date', [$start->toDateString(), $end->toDateString()])
+        ->get()
+        ->keyBy('date');
+ 
+    $records       = [];
+    $present       = 0; $absent  = 0; $late     = 0;
+    $halfDay       = 0; $onLeave = 0; $otHours  = 0.0;
+    $workingDays   = 0; $attendable = 0;
+ 
+    $period = new \DatePeriod(
+        new \DateTime($start->toDateString()),
+        new \DateInterval('P1D'),
+        new \DateTime($end->copy()->addDay()->toDateString())
+    );
+ 
+    foreach ($period as $dt) {
+        $dateStr   = $dt->format('Y-m-d');
+        $dayOfWeek = (int) $dt->format('N'); // 1=Mon … 7=Sun
+        $isFuture  = $dateStr > $today->toDateString();
+ 
+        if ($isFuture) continue; // don't show future days
+ 
+        $row = $rows[$dateStr] ?? null;
+ 
+        if ($dayOfWeek === 7) {
+            // Sunday → weekend
+            $status = 'weekend';
+        } elseif ($row) {
+            $status = $row->status;
+        } else {
+            // No record yet for a past workday
+            $status = 'absent';
+        }
+ 
+        // Accumulate
+        if ($dayOfWeek !== 7 && $status !== 'holiday') {
+            $workingDays++;
+            match ($status) {
+                'present'  => $present++,
+                'absent'   => $absent++,
+                'late'     => $late++,
+                'half_day' => $halfDay++,
+                'on_leave' => $onLeave++,
+                default    => null,
+            };
+        }
+ 
+        $wh = $row ? (float)($row->working_hours ?? 0) : null;
+        $ot = $row ? (float)($row->overtime_hours ?? 0) : null;
+        $otHours += $ot ?? 0;
+ 
+        $records[] = [
+            'date'           => $dateStr,
+            'status'         => $status,
+            'check_in'       => $row ? (isset($row->check_in)  ? substr($row->check_in,  0, 5) : null) : null,
+            'check_out'      => $row ? (isset($row->check_out) ? substr($row->check_out, 0, 5) : null) : null,
+            'working_hours'  => ($wh && $wh > 0) ? $wh : null,
+            'overtime_hours' => ($ot && $ot > 0) ? $ot : null,
+            'note'           => $row->note ?? null,
+        ];
+    }
+ 
+    $attendable = $present + $absent + $late + $halfDay;
+    $pct = $attendable > 0
+        ? round(($present + $late + $halfDay * 0.5) / $attendable * 100)
+        : 0;
+ 
+    return response()->json([
+        'year'  => $year,
+        'month' => $month,
+        'summary' => [
+            'present'               => $present,
+            'absent'                => $absent,
+            'late'                  => $late,
+            'half_day'              => $halfDay,
+            'on_leave'              => $onLeave,
+            'overtime_hours'        => round($otHours, 1),
+            'working_days'          => $workingDays,
+            'attendance_percentage' => $pct,
+        ],
+        'records' => $records,
+    ]);
+}
 }

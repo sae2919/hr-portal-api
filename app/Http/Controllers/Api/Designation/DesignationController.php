@@ -38,17 +38,42 @@ class DesignationController extends Controller
 
     public function store(Request $request): JsonResponse
     {
-        $request->validate([
-            'title'         => ['required', 'string', 'min:2', 'max:100', 'unique:designations,title'],
-            'code'          => ['nullable', 'string', 'max:20', 'unique:designations,code'],
-            'description'   => ['nullable', 'string', 'max:500'],
-            'status'        => ['nullable', 'in:active,inactive'],
-            'department_id' => ['nullable', 'exists:departments,id'],
-        ]);
+        // 💡 CRITICAL FIX: If code is blank, auto-generate a guaranteed unique code BEFORE validation
+        if (!$request->filled('code') && $request->filled('title')) {
+            // Remove special characters and take first 4 letters
+            $cleanTitle = preg_replace('/[^A-Za-z0-9]/', '', $request->title);
+            $baseCode = strtoupper(substr($cleanTitle, 0, 4));
+            if (empty($baseCode)) {
+                $baseCode = 'DESG';
+            }
+            
+            // Loop until we find a unique code in the database
+            $code = $baseCode;
+            $counter = 1;
+            while (Designation::where('code', $code)->exists()) {
+                $code = substr($baseCode, 0, 4 - strlen((string)$counter)) . $counter;
+                $counter++;
+            }
+            
+            $request->merge(['code' => $code]);
+        }
+
+        try {
+            $request->validate([
+                'title'         => ['required', 'string', 'min:2', 'max:100', 'unique:designations,title'],
+                'code'          => ['nullable', 'string', 'max:20', 'unique:designations,code'],
+                'description'   => ['nullable', 'string', 'max:500'],
+                'status'        => ['nullable', 'in:active,inactive'],
+                'department_id' => ['nullable', 'exists:departments,id'],
+            ]);
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            \Log::error('Designation creation validation failed: ' . json_encode($e->errors()));
+            throw $e;
+        }
 
         $designation = Designation::create([
             'title'         => $request->title,
-            'code'          => $request->code ?? strtoupper(substr($request->title, 0, 4)),
+            'code'          => $request->code, // Guaranteed unique and validated
             'description'   => $request->description,
             'status'        => $request->status ?? 'active',
             'department_id' => $request->department_id,

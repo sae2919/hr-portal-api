@@ -14,6 +14,7 @@ use Carbon\Carbon;
 class AttendanceController extends Controller
 {
     // ── Role helpers ──────────────────────────────────────────────
+
     private function isAdminOrHR(): bool
     {
         return auth()->user()->hasRole('admin') || auth()->user()->hasRole('hr');
@@ -21,7 +22,36 @@ class AttendanceController extends Controller
 
     private function isManager(): bool
     {
-        return auth()->user()->hasRole('manager');
+        $user = auth()->user();
+        if ($user->hasRole('admin') || $user->hasRole('hr')) return false;
+        if ($user->hasRole('manager')) return true;
+
+        $employee = $user->employee;
+        if ($employee) {
+            $level = strtolower($employee->position_level ?? '');
+            if ($level === 'manager') return true;
+
+            $designation = strtolower($employee->designation?->title ?? '');
+            if (str_contains($designation, 'manager')) return true;
+        }
+        return false;
+    }
+
+    private function isTeamLead(): bool
+    {
+        $user = auth()->user();
+        if ($user->hasRole('admin') || $user->hasRole('hr')) return false;
+        if ($user->hasRole('team_lead')) return true;
+
+        $employee = $user->employee;
+        if ($employee) {
+            $level = strtolower($employee->position_level ?? '');
+            if ($level === 'team_lead') return true;
+
+            $designation = strtolower($employee->designation?->title ?? '');
+            if (str_contains($designation, 'team lead') || str_contains($designation, 'lead')) return true;
+        }
+        return false;
     }
 
     private function managerDeptId(): ?int
@@ -30,13 +60,13 @@ class AttendanceController extends Controller
     }
 
     // ── GET /api/v1/attendance ────────────────────────────────────
+
     public function index(Request $request): AnonymousResourceCollection
     {
         $user  = auth()->user();
         $query = Attendance::with(['employee.department']);
 
         if ($this->isAdminOrHR()) {
-            // Admin/HR: see all, with optional filters
             if ($request->filled('employee_id')) {
                 $query->where('employee_id', $request->employee_id);
             }
@@ -44,8 +74,7 @@ class AttendanceController extends Controller
                 $query->whereHas('employee', fn($q) => $q->where('department_id', $request->department_id));
             }
 
-        } elseif ($this->isManager()) {
-            // Manager: only their department
+        } elseif ($this->isManager() || $this->isTeamLead()) {
             $deptId = $this->managerDeptId();
             $query->whereHas('employee', fn($q) => $q->where('department_id', $deptId));
 
@@ -54,7 +83,6 @@ class AttendanceController extends Controller
             }
 
         } else {
-            // Employee: only own attendance
             $employeeId = $user->employee?->id;
             if (!$employeeId) abort(403, 'Employee record not found.');
             $query->where('employee_id', $employeeId);
@@ -76,6 +104,7 @@ class AttendanceController extends Controller
     }
 
     // ── POST /api/v1/attendance ───────────────────────────────────
+
     public function store(Request $request): JsonResponse
     {
         $request->validate([
@@ -93,15 +122,13 @@ class AttendanceController extends Controller
         if ($this->isAdminOrHR()) {
             // Full access
 
-        } elseif ($this->isManager()) {
-            // Manager: only for their dept employees
+        } elseif ($this->isManager() || $this->isTeamLead()) {
             $employee = Employee::find($request->employee_id);
             if ($employee->department_id !== $this->managerDeptId()) {
                 return response()->json(['message' => 'You can only manage attendance for your department.'], 403);
             }
 
         } else {
-            // Employee: only themselves
             $employeeId = $user->employee?->id;
             if ((int) $request->employee_id !== $employeeId) {
                 return response()->json(['message' => 'You can only manage your own attendance.'], 403);
@@ -126,13 +153,14 @@ class AttendanceController extends Controller
     }
 
     // ── GET /api/v1/attendance/{attendance} ───────────────────────
+
     public function show(Attendance $attendance): JsonResponse
     {
         $user = auth()->user();
 
         if ($this->isAdminOrHR()) {
             // Full access
-        } elseif ($this->isManager()) {
+        } elseif ($this->isManager() || $this->isTeamLead()) {
             if ($attendance->employee->department_id !== $this->managerDeptId()) {
                 return response()->json(['message' => 'Forbidden.'], 403);
             }
@@ -146,13 +174,14 @@ class AttendanceController extends Controller
     }
 
     // ── PUT /api/v1/attendance/{attendance} ───────────────────────
+
     public function update(Request $request, Attendance $attendance): JsonResponse
     {
         $user = auth()->user();
 
         if ($this->isAdminOrHR()) {
             // Full access
-        } elseif ($this->isManager()) {
+        } elseif ($this->isManager() || $this->isTeamLead()) {
             if ($attendance->employee->department_id !== $this->managerDeptId()) {
                 return response()->json(['message' => 'Forbidden.'], 403);
             }
@@ -179,6 +208,7 @@ class AttendanceController extends Controller
     }
 
     // ── DELETE /api/v1/attendance/{attendance} ────────────────────
+
     public function destroy(Attendance $attendance): JsonResponse
     {
         if (!$this->isAdminOrHR()) {
@@ -190,6 +220,7 @@ class AttendanceController extends Controller
     }
 
     // ── POST /api/v1/attendance/checkin ───────────────────────────
+
     public function checkIn(Request $request): JsonResponse
     {
         $request->validate(['employee_id' => ['required', 'exists:employees,id']]);
@@ -218,6 +249,7 @@ class AttendanceController extends Controller
     }
 
     // ── POST /api/v1/attendance/checkout ──────────────────────────
+
     public function checkOut(Request $request): JsonResponse
     {
         $request->validate(['employee_id' => ['required', 'exists:employees,id']]);
@@ -248,140 +280,250 @@ class AttendanceController extends Controller
     }
 
     // ── GET /api/v1/attendance/report/monthly ─────────────────────
-    public function monthlyReport(Request $request): JsonResponse
-    {
-        $month = $request->get('month', Carbon::now()->month);
-        $year  = $request->get('year',  Carbon::now()->year);
-        $user  = auth()->user();
 
-        $employeeQuery = Employee::with(['department'])->where('status', 'active');
+public function monthlyReport(Request $request): JsonResponse
+{
+    $month = $request->get('month', Carbon::now()->month);
+    $year  = $request->get('year',  Carbon::now()->year);
+    $user  = auth()->user();
 
-        if ($this->isAdminOrHR()) {
-            if ($request->filled('employee_id')) {
-                $employeeQuery->where('id', $request->employee_id);
-            }
-        } elseif ($this->isManager()) {
-            $employeeQuery->where('department_id', $this->managerDeptId());
-        } else {
-            $employeeId = $user->employee?->id;
-            if (!$employeeId) return response()->json(['message' => 'Employee record not found.'], 403);
-            $employeeQuery->where('id', $employeeId);
+    $employeeQuery = Employee::with(['department'])->where('status', 'active');
+
+    if ($this->isAdminOrHR()) {
+        if ($request->filled('employee_id')) {
+            $employeeQuery->where('id', $request->employee_id);
         }
-
-        $employees = $employeeQuery->paginate(10);
-
-        $report = $employees->getCollection()->map(function (Employee $employee) use ($month, $year) {
-            $records = Attendance::where('employee_id', $employee->id)
-                                 ->whereMonth('date', $month)
-                                 ->whereYear('date', $year)
-                                 ->get();
-
-            return [
-                'employee_id'    => $employee->id,
-                'employee_code'  => $employee->employee_code,
-                'full_name'      => $employee->full_name,
-                'department'     => $employee->department?->name,
-                'present'        => $records->where('status', 'present')->count(),
-                'absent'         => $records->where('status', 'absent')->count(),
-                'late'           => $records->where('status', 'late')->count(),
-                'half_day'       => $records->where('status', 'half_day')->count(),
-                'total_days'     => $records->count(),
-                'overtime_hours' => $records->sum('overtime_hours'),
-            ];
-        });
-
-        return response()->json(['month' => $month, 'year' => $year, 'data' => $report]);
+    } elseif ($this->isManager() || $this->isTeamLead()) {
+        $employeeQuery->where('department_id', $this->managerDeptId());
+    } else {
+        $employeeId = $user->employee?->id;
+        if (!$employeeId) return response()->json(['message' => 'Employee record not found.'], 403);
+        $employeeQuery->where('id', $employeeId);
     }
 
+    $employees = $employeeQuery->get();
+
+    $startDate = Carbon::create($year, $month, 1)->startOfMonth();
+    $endDate = Carbon::create($year, $month, 1)->endOfMonth();
+
+    $report = $employees->map(function (Employee $employee) use ($month, $year, $startDate, $endDate) {
+        // Get all attendance records for the month
+        $records = Attendance::where('employee_id', $employee->id)
+                             ->whereMonth('date', $month)
+                             ->whereYear('date', $year)
+                             ->get()
+                             ->keyBy('date');
+        
+        // Get approved leaves for this employee in this month
+        $leaves = \DB::table('leaves')
+            ->where('employee_id', $employee->id)
+            ->where('status', 'approved')
+            ->where(function($q) use ($startDate, $endDate) {
+                $q->whereBetween('start_date', [$startDate->toDateString(), $endDate->toDateString()])
+                  ->orWhereBetween('end_date', [$startDate->toDateString(), $endDate->toDateString()])
+                  ->orWhere(function($q2) use ($startDate, $endDate) {
+                      $q2->where('start_date', '<=', $startDate->toDateString())
+                         ->where('end_date', '>=', $endDate->toDateString());
+                  });
+            })
+            ->get();
+        
+        // Create a map of leave dates
+        $leaveDates = [];
+        foreach ($leaves as $leave) {
+            $leaveStart = Carbon::parse($leave->start_date);
+            $leaveEnd = Carbon::parse($leave->end_date);
+            for ($d = $leaveStart->copy(); $d <= $leaveEnd; $d->addDay()) {
+                $leaveDates[$d->toDateString()] = true;
+            }
+        }
+        
+        $present = 0;
+        $absent = 0;
+        $late = 0;
+        $halfDay = 0;
+        $onLeave = 0;
+        $workingDaysCount = 0;
+        
+        // Loop through each day of the month
+        $today = Carbon::today()->toDateString();
+        for ($date = $startDate->copy(); $date <= $endDate; $date->addDay()) {
+            $dayOfWeek = $date->dayOfWeek;
+            if ($dayOfWeek == 0 || $dayOfWeek == 6) {
+                continue; // Skip weekends
+            }
+
+            $dateStr = $date->toDateString();
+
+            // Skip future dates — they haven't happened yet
+            if ($dateStr > $today) {
+                continue;
+            }
+
+            $workingDaysCount++;
+
+            // Check if on leave first
+            if (isset($leaveDates[$dateStr])) {
+                $onLeave++;
+                continue;
+            }
+
+            // Only count days that have an explicit attendance record
+            // Days with NO record are simply untracked — NOT marked absent
+            if (isset($records[$dateStr])) {
+                $att = $records[$dateStr];
+                switch ($att->status) {
+                    case 'present':
+                        $present++;
+                        break;
+                    case 'absent':
+                        $absent++;
+                        break;
+                    case 'late':
+                        $late++;
+                        break;
+                    case 'half_day':
+                        $halfDay++;
+                        break;
+                }
+            }
+            // else: no record = untracked, do not count as absent
+        }
+        
+        return [
+            'employee_id'    => $employee->id,
+            'employee_code'  => $employee->employee_code,
+            'full_name'      => $employee->full_name,
+            'department'     => $employee->department?->name,
+            'present'        => $present,
+            'absent'         => $absent,
+            'late'           => $late,
+            'half_day'       => $halfDay,
+            'on_leave'       => $onLeave,
+            'working_days'   => $workingDaysCount,
+            'overtime_hours' => $records->sum('overtime_hours'),
+        ];
+    });
+
+    return response()->json([
+        'month' => $month, 
+        'year' => $year, 
+        'data' => $report
+    ]);
+}
+
     // ── GET /api/v1/attendance/worksheet ──────────────────────────
-    public function worksheet(Request $request): JsonResponse
-    {
-        $request->validate([
-            'date'     => ['required', 'date'],
-            'per_page' => ['nullable', 'integer', 'min:1', 'max:100'],
+
+    
+
+public function worksheet(Request $request): JsonResponse
+{
+    $request->validate([
+        'date'     => ['required', 'date'],
+        'per_page' => ['nullable', 'integer', 'min:1', 'max:100'],
+    ]);
+
+    $date    = $request->date;
+    $perPage = $request->per_page ?? 10;
+    $user    = auth()->user();
+
+    $employeeQuery = \DB::table('employees')
+        ->leftJoin('departments', 'employees.department_id', '=', 'departments.id')
+        ->leftJoin('attendances', function ($join) use ($date) {
+            $join->on('employees.id', '=', 'attendances.employee_id')
+                 ->whereDate('attendances.date', $date);
+        })
+        ->where('employees.status', 'active')
+        ->select([
+            'employees.id as employee_id',
+            'employees.first_name',
+            'employees.last_name',
+            'departments.name as department_name',
+            'attendances.check_in',
+            'attendances.check_out',
+            'attendances.status',
+            'attendances.overtime_hours',
+            'attendances.note',
+            \DB::raw('CASE WHEN attendances.id IS NOT NULL THEN 1 ELSE 0 END as is_saved'),
         ]);
 
-        $date    = $request->date;
-        $perPage = $request->per_page ?? 10;
-        $user    = auth()->user();
-
-        $employeeQuery = \DB::table('employees')
-            ->leftJoin('departments', 'employees.department_id', '=', 'departments.id')
-            ->leftJoin('attendances', function ($join) use ($date) {
-                $join->on('employees.id', '=', 'attendances.employee_id')
-                     ->whereDate('attendances.date', $date);
-            })
-            ->where('employees.status', 'active')
-            ->select([
-                'employees.id as employee_id',
-                'employees.first_name',
-                'employees.last_name',
-                'departments.name as department_name',
-                'attendances.check_in',
-                'attendances.check_out',
-                'attendances.status',
-                'attendances.overtime_hours',
-                'attendances.note',
-                \DB::raw('CASE WHEN attendances.id IS NOT NULL THEN 1 ELSE 0 END as is_saved'),
-            ]);
-
-        if ($this->isAdminOrHR()) {
-            if ($request->filled('employee_id')) {
-                $employeeQuery->where('employees.id', $request->employee_id);
-            }
-        } elseif ($this->isManager()) {
-            $employeeQuery->where('employees.department_id', $this->managerDeptId());
-        } else {
-            $employeeId = $user->employee?->id;
-            if (!$employeeId) return response()->json(['message' => 'Employee record not found.'], 403);
-            $employeeQuery->where('employees.id', $employeeId);
+    if ($this->isAdminOrHR()) {
+        if ($request->filled('employee_id')) {
+            $employeeQuery->where('employees.id', $request->employee_id);
         }
+    } elseif ($this->isManager() || $this->isTeamLead()) {
+        $employeeQuery->where('employees.department_id', $this->managerDeptId());
+    } else {
+        $employeeId = $user->employee?->id;
+        if (!$employeeId) return response()->json(['message' => 'Employee record not found.'], 403);
+        $employeeQuery->where('employees.id', $employeeId);
+    }
 
-        $employees = $employeeQuery->paginate($perPage);
+    $employees = $employeeQuery->paginate($perPage);
 
-        $employees->getCollection()->transform(function ($row) use ($date) {
-            $fullName = trim(($row->first_name ?? '') . ' ' . ($row->last_name ?? ''));
+    $employees->getCollection()->transform(function ($row) use ($date) {
+        $fullName = trim(($row->first_name ?? '') . ' ' . ($row->last_name ?? ''));
 
-            $leave = \DB::table('leaves')
-                ->where('employee_id', $row->employee_id)
-                ->where('status', 'approved')
-                ->whereDate('start_date', '<=', $date)
-                ->whereDate('end_date', '>=', $date)
-                ->first();
+        // Check if employee is on approved leave for this date
+        $leave = \DB::table('leaves')
+            ->where('employee_id', $row->employee_id)
+            ->where('status', 'approved')
+            ->whereDate('start_date', '<=', $date)
+            ->whereDate('end_date', '>=', $date)
+            ->first();
 
-            if ($leave) {
-                $defaultStatus = 'absent';
-                $defaultNote   = 'On Approved Leave';
-                $defaultIn     = '';
-                $defaultOut    = '';
-            } else {
-                $defaultStatus = 'present';
-                $defaultNote   = '';
-                $defaultIn     = '09:00';
-                $defaultOut    = '18:00';
-            }
-
+        // FIXED: If on leave, set status to 'on_leave' instead of 'absent'
+        if ($leave) {
             return [
                 'employee_id'    => (int) $row->employee_id,
                 'name'           => !empty($fullName) ? $fullName : 'Unnamed Employee',
                 'department'     => $row->department_name ?? 'N/A',
-                'check_in'       => $row->check_in  ? substr($row->check_in,  0, 5) : $defaultIn,
-                'check_out'      => $row->check_out ? substr($row->check_out, 0, 5) : $defaultOut,
-                'status'         => $row->status ?? $defaultStatus,
-                'overtime_hours' => (float) ($row->overtime_hours ?? 0),
-                'note'           => $row->note ?? $defaultNote,
-                'is_saved'       => (bool) $row->is_saved,
+                'check_in'       => '',
+                'check_out'      => '',
+                'status'         => 'on_leave',  // ← CHANGED from 'absent' to 'on_leave'
+                'overtime_hours' => 0,
+                'note'           => 'On Approved Leave',
+                'is_saved'       => true,
             ];
-        });
+        }
 
-        return response()->json($employees);
-    }
+        // If attendance record exists, use it
+        if ($row->is_saved) {
+            return [
+                'employee_id'    => (int) $row->employee_id,
+                'name'           => !empty($fullName) ? $fullName : 'Unnamed Employee',
+                'department'     => $row->department_name ?? 'N/A',
+                'check_in'       => $row->check_in ? substr($row->check_in, 0, 5) : '',
+                'check_out'      => $row->check_out ? substr($row->check_out, 0, 5) : '',
+                'status'         => $row->status ?? 'present',
+                'overtime_hours' => (float) ($row->overtime_hours ?? 0),
+                'note'           => $row->note ?? '',
+                'is_saved'       => true,
+            ];
+        }
+
+        // Default for no attendance record and not on leave
+        return [
+            'employee_id'    => (int) $row->employee_id,
+            'name'           => !empty($fullName) ? $fullName : 'Unnamed Employee',
+            'department'     => $row->department_name ?? 'N/A',
+            'check_in'       => '09:00',
+            'check_out'      => '18:00',
+            'status'         => 'present',
+            'overtime_hours' => 0,
+            'note'           => '',
+            'is_saved'       => false,
+        ];
+    });
+
+    return response()->json($employees);
+}
 
     // ── POST /api/v1/attendance/bulk-store ────────────────────────
+
     public function bulkStore(Request $request): JsonResponse
     {
-        // Admin/HR/Manager can bulk save
-        if (!$this->isAdminOrHR() && !$this->isManager()) {
+        if (!$this->isAdminOrHR() && !$this->isManager() && !$this->isTeamLead()) {
             return response()->json(['message' => 'Forbidden.'], 403);
         }
 
@@ -398,11 +540,10 @@ class AttendanceController extends Controller
 
         $date         = $request->date;
         $updatedCount = 0;
-        $deptId       = $this->isManager() ? $this->managerDeptId() : null;
+        $deptId       = ($this->isManager() || $this->isTeamLead()) ? $this->managerDeptId() : null;
 
         \DB::transaction(function () use ($request, $date, $deptId, &$updatedCount) {
             foreach ($request->records as $record) {
-                // Manager: skip employees outside their dept
                 if ($deptId) {
                     $employee = Employee::find($record['employee_id']);
                     if ($employee->department_id !== $deptId) continue;
@@ -427,75 +568,128 @@ class AttendanceController extends Controller
             'count'   => $updatedCount,
         ]);
     }
-    public function myCalendar(Request $request): JsonResponse
+
+    // ── GET /api/v1/attendance/my-calendar ────────────────────────
+
+public function myCalendar(Request $request): JsonResponse
 {
     $user  = auth()->user();
     $year  = (int) $request->query('year',  now()->year);
     $month = (int) $request->query('month', now()->month);
- 
+
     $employee = $user->employee;
-if (!$employee) {
-    return response()->json(['message' => 'Employee record not found.'], 404);
-}
- 
-    $start = \Carbon\Carbon::createFromDate($year, $month, 1)->startOfMonth();
+    if (!$employee) {
+        return response()->json(['message' => 'Employee record not found.'], 404);
+    }
+
+    $start = Carbon::createFromDate($year, $month, 1)->startOfMonth();
     $end   = $start->copy()->endOfMonth();
-    $today = \Carbon\Carbon::today();
- 
-    // Fetch all rows for this employee this month
+    $today = Carbon::today();
+
+    // Get all attendance records for this employee
     $rows = \DB::table('attendances')
         ->where('employee_id', $employee->id)
         ->whereBetween('date', [$start->toDateString(), $end->toDateString()])
         ->get()
         ->keyBy('date');
- 
-    $records       = [];
-    $present       = 0; $absent  = 0; $late     = 0;
-    $halfDay       = 0; $onLeave = 0; $otHours  = 0.0;
-    $workingDays   = 0; $attendable = 0;
- 
+
+    // Get all approved leaves for this employee in this month
+    $leaves = \DB::table('leaves')
+        ->where('employee_id', $employee->id)
+        ->where('status', 'approved')
+        ->where(function($q) use ($start, $end) {
+            $q->whereBetween('start_date', [$start->toDateString(), $end->toDateString()])
+              ->orWhereBetween('end_date', [$start->toDateString(), $end->toDateString()])
+              ->orWhere(function($q2) use ($start, $end) {
+                  $q2->where('start_date', '<=', $start->toDateString())
+                     ->where('end_date', '>=', $end->toDateString());
+              });
+        })
+        ->get();
+
+    // Create a map of dates that are on leave
+    $leaveDates = [];
+    foreach ($leaves as $leave) {
+        $leaveStart = Carbon::parse($leave->start_date);
+        $leaveEnd = Carbon::parse($leave->end_date);
+        for ($d = $leaveStart->copy(); $d <= $leaveEnd; $d->addDay()) {
+            $leaveDates[$d->toDateString()] = true;
+        }
+    }
+
+    $records     = [];
+    $present     = 0; $absent  = 0; $late    = 0;
+    $halfDay     = 0; $onLeave = 0; $otHours = 0.0;
+    $workingDays = 0;
+
     $period = new \DatePeriod(
         new \DateTime($start->toDateString()),
         new \DateInterval('P1D'),
         new \DateTime($end->copy()->addDay()->toDateString())
     );
- 
+
     foreach ($period as $dt) {
         $dateStr   = $dt->format('Y-m-d');
         $dayOfWeek = (int) $dt->format('N'); // 1=Mon … 7=Sun
         $isFuture  = $dateStr > $today->toDateString();
- 
-        if ($isFuture) continue; // don't show future days
- 
-        $row = $rows[$dateStr] ?? null;
- 
-        if ($dayOfWeek === 7) {
-            // Sunday → weekend
-            $status = 'weekend';
-        } elseif ($row) {
-            $status = $row->status;
-        } else {
-            // No record yet for a past workday
-            $status = 'absent';
+
+        if ($isFuture) continue;
+
+        // Check if on leave FIRST (overrides attendance)
+        if (isset($leaveDates[$dateStr])) {
+            $status = 'on_leave';
+            if ($dayOfWeek !== 7) {
+                $workingDays++;
+                $onLeave++;
+            }
+            $records[] = [
+                'date'           => $dateStr,
+                'status'         => 'on_leave',
+                'check_in'       => null,
+                'check_out'      => null,
+                'working_hours'  => null,
+                'overtime_hours' => null,
+                'note'           => 'On Approved Leave',
+            ];
+            continue;
         }
- 
-        // Accumulate
-        if ($dayOfWeek !== 7 && $status !== 'holiday') {
-            $workingDays++;
+
+        if ($dayOfWeek === 7) {
+            $status = 'weekend';
+            $records[] = [
+                'date'           => $dateStr,
+                'status'         => 'weekend',
+                'check_in'       => null,
+                'check_out'      => null,
+                'working_hours'  => null,
+                'overtime_hours' => null,
+                'note'           => null,
+            ];
+            continue;
+        }
+
+        $workingDays++;
+        $row = $rows[$dateStr] ?? null;
+
+        if ($row) {
+            $status = $row->status;
             match ($status) {
                 'present'  => $present++,
                 'absent'   => $absent++,
                 'late'     => $late++,
                 'half_day' => $halfDay++,
-                'on_leave' => $onLeave++,
                 default    => null,
             };
+            $wh = (float) ($row->working_hours ?? 0);
+            $ot = (float) ($row->overtime_hours ?? 0);
+            $otHours += $ot;
+        } else {
+            $status = 'absent';
+            $absent++;
+            $wh = null;
+            $ot = null;
         }
- 
-        $wh = $row ? (float)($row->working_hours ?? 0) : null;
-        $ot = $row ? (float)($row->overtime_hours ?? 0) : null;
-        $otHours += $ot ?? 0;
- 
+
         $records[] = [
             'date'           => $dateStr,
             'status'         => $status,
@@ -506,12 +700,12 @@ if (!$employee) {
             'note'           => $row->note ?? null,
         ];
     }
- 
-    $attendable = $present + $absent + $late + $halfDay;
+
+    $attendable = $present + $absent + $late + $halfDay + $onLeave;
     $pct = $attendable > 0
         ? round(($present + $late + $halfDay * 0.5) / $attendable * 100)
         : 0;
- 
+
     return response()->json([
         'year'  => $year,
         'month' => $month,
@@ -528,4 +722,61 @@ if (!$employee) {
         'records' => $records,
     ]);
 }
+
+    // ── GET /api/v1/attendance/month-leaves ───────────────────────
+    //
+    // Returns all approved leaves overlapping the requested month.
+    // Used by the admin/HR Leave Calendar and the Team Lead calendar
+    // to show a popup of who is on leave on a given day.
+    //
+    // Access:
+    //   Admin / HR    → all employees
+    //   Manager / TL  → their department only
+    //   Employee      → 403
+
+    public function monthLeaves(Request $request): JsonResponse
+    {
+        if (!$this->isAdminOrHR() && !$this->isManager() && !$this->isTeamLead()) {
+            return response()->json(['message' => 'Forbidden.'], 403);
+        }
+
+        $year  = (int) $request->query('year',  now()->year);
+        $month = (int) $request->query('month', now()->month);
+
+        $start = Carbon::createFromDate($year, $month, 1)->startOfMonth();
+        $end   = $start->copy()->endOfMonth();
+
+        $query = \DB::table('leaves')
+            ->join('employees', 'leaves.employee_id', '=', 'employees.id')
+            ->leftJoin('departments', 'employees.department_id', '=', 'departments.id')
+            ->leftJoin('leave_types', 'leaves.leave_type_id', '=', 'leave_types.id')
+            ->where('leaves.status', 'approved')
+            ->where('leaves.start_date', '<=', $end->toDateString())
+            ->where('leaves.end_date',   '>=', $start->toDateString())
+            ->select([
+                'leaves.id as leave_id',
+                'leaves.employee_id',
+                'leaves.start_date',
+                'leaves.end_date',
+                \DB::raw("CONCAT(employees.first_name, ' ', employees.last_name) as employee_name"),
+                'departments.name as department',
+                'leave_types.name as leave_type',
+            ]);
+
+        // Manager / Team Lead: scope to own department only
+        if (!$this->isAdminOrHR()) {
+            $deptId = $this->managerDeptId();
+            if ($deptId) {
+                $query->where('employees.department_id', $deptId);
+            }
+        }
+
+        $leaves = $query->orderBy('leaves.start_date')->get();
+
+        return response()->json([
+            'year'  => $year,
+            'month' => $month,
+            'data'  => $leaves,
+        ]);
+    }
 }

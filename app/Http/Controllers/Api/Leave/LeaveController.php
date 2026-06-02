@@ -8,6 +8,7 @@ use App\Models\Leave;
 use App\Models\LeaveBalance;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Carbon\Carbon;
 
 class LeaveController extends Controller
@@ -18,62 +19,65 @@ class LeaveController extends Controller
         return auth()->user()->hasRole('admin') || auth()->user()->hasRole('hr');
     }
 
-    private function isManager(): bool
+    private function isTeamLead(): bool
     {
-        return auth()->user()->hasRole('manager');
+        $user = auth()->user();
+        if ($user->hasRole('admin') || $user->hasRole('hr')) return false;
+        if ($user->hasRole('manager') || $user->hasRole('team_lead')) return true;
+
+        $employee = $user->employee;
+        if ($employee) {
+            $level = strtolower($employee->position_level ?? '');
+            if ($level === 'manager' || $level === 'team_lead') return true;
+
+            $designation = strtolower($employee->designation?->title ?? '');
+            if (str_contains($designation, 'manager') || str_contains($designation, 'team lead') || str_contains($designation, 'lead')) return true;
+        }
+        return false;
     }
 
-    private function managerDeptId(): ?int
+    private function myDeptId(): ?int
     {
         return auth()->user()->employee?->department_id;
     }
 
+    // ── Index ─────────────────────────────────────────────────────
     public function index(Request $request)
     {
         $user  = auth()->user();
-        $query = Leave::with(['employee.department', 'leaveType']);
+        $query = Leave::with(['employee.department', 'leaveType', 'teamLead']);
 
         if ($this->isAdminOrHR()) {
-            // Admin/HR: see all leaves
-            if ($request->filled('employee_id')) {
-                $query->where('employee_id', $request->employee_id);
-            }
+            // Admin/HR: see everything
+            if ($request->filled('employee_id'))  $query->where('employee_id', $request->employee_id);
             if ($request->filled('department_id')) {
                 $query->whereHas('employee', fn($q) => $q->where('department_id', $request->department_id));
             }
-
-        } elseif ($this->isManager()) {
-            // Manager: only their department's leaves
-            $query->whereHas('employee', fn($q) => $q->where('department_id', $this->managerDeptId()));
-
-            if ($request->filled('employee_id')) {
-                $query->where('employee_id', $request->employee_id);
-            }
-
+        } elseif ($this->isTeamLead()) {
+            // Team lead: only their dept
+            $query->whereHas('employee', fn($q) => $q->where('department_id', $this->myDeptId()));
+            if ($request->filled('employee_id')) $query->where('employee_id', $request->employee_id);
         } else {
-            // Employee: only their own leaves
+            // Employee: own leaves only
             $query->where('employee_id', $user->employee?->id);
         }
 
-        if ($request->filled('status')) {
-            $query->where('status', $request->status);
-        }
+        if ($request->filled('status'))        $query->where('status', $request->status);
+        if ($request->filled('leave_type_id')) $query->where('leave_type_id', $request->leave_type_id);
+        if ($request->filled('team_lead_status')) $query->where('team_lead_status', $request->team_lead_status);
 
-        if ($request->filled('leave_type_id')) {
-            $query->where('leave_type_id', $request->leave_type_id);
-        }
-
-        $leaves = $query->orderBy('created_at', 'desc')->paginate($request->per_page ?? 10);
+        $leaves = $query->orderBy('created_at', 'desc')
+                        ->paginate($request->per_page ?? 10);
 
         return LeaveResource::collection($leaves);
     }
 
+    // ── Store (apply) ─────────────────────────────────────────────
     public function store(Request $request): JsonResponse
     {
-        $user         = auth()->user();
-        $isAdminOrHR  = $this->isAdminOrHR();
+        $user        = auth()->user();
+        $isAdminOrHR = $this->isAdminOrHR();
 
-        // Force employee_id for non-admin/hr
         if (!$isAdminOrHR) {
             $request->merge(['employee_id' => $user->employee?->id]);
         }
@@ -100,22 +104,26 @@ class LeaveController extends Controller
             ], 422);
         }
 
-        $leave      = null;
-        $status     = $isAdminOrHR ? 'approved' : 'pending';
-        $approvedBy = $isAdminOrHR ? auth()->id() : null;
-        $approvedAt = $isAdminOrHR ? now() : null;
+        $leave = null;
 
-        \DB::transaction(function () use ($request, $days, $startDate, $status, $approvedBy, $approvedAt, &$leave) {
+        // Admin/HR applying = auto approved (skip TL step)
+        $status           = $isAdminOrHR ? 'approved' : 'pending';
+        $teamLeadStatus   = $isAdminOrHR ? 'approved' : 'pending';
+        $approvedBy       = $isAdminOrHR ? auth()->id() : null;
+        $approvedAt       = $isAdminOrHR ? now()        : null;
+
+        DB::transaction(function () use ($request, $days, $startDate, $status, $teamLeadStatus, $approvedBy, $approvedAt, &$leave) {
             $leave = Leave::create([
-                'employee_id'   => $request->employee_id,
-                'leave_type_id' => $request->leave_type_id,
-                'start_date'    => $request->start_date,
-                'end_date'      => $request->end_date,
-                'days'          => $days,
-                'reason'        => $request->reason,
-                'status'        => $status,
-                'approved_by'   => $approvedBy,
-                'approved_at'   => $approvedAt,
+                'employee_id'      => $request->employee_id,
+                'leave_type_id'    => $request->leave_type_id,
+                'start_date'       => $request->start_date,
+                'end_date'         => $request->end_date,
+                'days'             => $days,
+                'reason'           => $request->reason,
+                'status'           => $status,
+                'team_lead_status' => $teamLeadStatus,
+                'approved_by'      => $approvedBy,
+                'approved_at'      => $approvedAt,
             ]);
 
             LeaveBalance::where('employee_id', $request->employee_id)
@@ -131,77 +139,88 @@ class LeaveController extends Controller
 
         $message = $isAdminOrHR
             ? 'Leave added and automatically approved.'
-            : 'Leave application submitted. Pending approval.';
+            : 'Leave application submitted. Awaiting team lead review.';
 
         return response()->json([
             'message' => $message,
-            'data'    => new LeaveResource($leave->load(['employee.department', 'leaveType'])),
+            'data'    => new LeaveResource($leave->load(['employee.department', 'leaveType', 'teamLead'])),
         ], 201);
     }
 
-    public function approve(Request $request, Leave $leave): JsonResponse
+    // ── Team Lead Approve ─────────────────────────────────────────
+    public function teamLeadApprove(Request $request, Leave $leave): JsonResponse
     {
-        // Admin, HR, or Manager (only for their dept) can approve
-        if (!$this->isAdminOrHR()) {
-            if ($this->isManager()) {
-                if ($leave->employee->department_id !== $this->managerDeptId()) {
-                    return response()->json(['message' => 'Unauthorized.'], 403);
-                }
-            } else {
-                return response()->json(['message' => 'Unauthorized.'], 403);
+        if (!$this->isTeamLead() && !$this->isAdminOrHR()) {
+            return response()->json(['message' => 'Unauthorized.'], 403);
+        }
+
+        // Team lead can only act on their own dept
+        if ($this->isTeamLead() && !$this->isAdminOrHR()) {
+            if ($leave->employee->department_id !== $this->myDeptId()) {
+                return response()->json(['message' => 'Unauthorized — not your department.'], 403);
             }
+        }
+
+        if ($leave->team_lead_status !== 'pending') {
+            return response()->json(['message' => 'Team lead has already acted on this leave.'], 422);
         }
 
         if ($leave->status !== 'pending') {
-            return response()->json(['message' => 'Only pending leaves can be approved.'], 422);
+            return response()->json(['message' => 'Leave is no longer pending.'], 422);
         }
 
         $leave->update([
-            'status'      => 'approved',
-            'approved_by' => auth()->id(),
-            'approved_at' => now(),
+            'team_lead_status'   => 'approved',
+            'team_lead_id'       => auth()->id(),
+            'team_lead_acted_at' => now(),
+            // Overall status stays 'pending' — HR must still final approve
         ]);
 
         return response()->json([
-            'message' => 'Leave approved successfully.',
-            'data'    => new LeaveResource($leave->load(['employee', 'leaveType'])),
+            'message' => 'Team lead approved. Awaiting HR/Admin final approval.',
+            'data'    => new LeaveResource($leave->load(['employee', 'leaveType', 'teamLead'])),
         ]);
     }
 
-    public function reject(Request $request, Leave $leave): JsonResponse
+    // ── Team Lead Reject ──────────────────────────────────────────
+    public function teamLeadReject(Request $request, Leave $leave): JsonResponse
     {
-        // Admin, HR, or Manager (only for their dept) can reject
-        if (!$this->isAdminOrHR()) {
-            if ($this->isManager()) {
-                if ($leave->employee->department_id !== $this->managerDeptId()) {
-                    return response()->json(['message' => 'Unauthorized.'], 403);
-                }
-            } else {
-                return response()->json(['message' => 'Unauthorized.'], 403);
+        if (!$this->isTeamLead() && !$this->isAdminOrHR()) {
+            return response()->json(['message' => 'Unauthorized.'], 403);
+        }
+
+        if ($this->isTeamLead() && !$this->isAdminOrHR()) {
+            if ($leave->employee->department_id !== $this->myDeptId()) {
+                return response()->json(['message' => 'Unauthorized — not your department.'], 403);
             }
+        }
+
+        if ($leave->team_lead_status !== 'pending') {
+            return response()->json(['message' => 'Team lead has already acted on this leave.'], 422);
         }
 
         $request->validate(['rejection_reason' => ['required', 'string', 'min:5']]);
 
-        if ($leave->status !== 'pending') {
-            return response()->json(['message' => 'Only pending leaves can be rejected.'], 422);
-        }
-
-        \DB::transaction(function () use ($request, $leave) {
+        // TL rejection sets overall status to 'rejected'
+        // BUT HR can still override (see approve() below)
+        DB::transaction(function () use ($request, $leave) {
             $leave->update([
-                'status'           => 'rejected',
-                'rejection_reason' => $request->rejection_reason,
-                'approved_by'      => auth()->id(),
-                'approved_at'      => now(),
+                'team_lead_status'            => 'rejected',
+                'team_lead_id'                => auth()->id(),
+                'team_lead_acted_at'          => now(),
+                'team_lead_rejection_reason'  => $request->rejection_reason,
+                'status'                      => 'rejected',
+                'rejection_reason'            => $request->rejection_reason,
+                'approved_by'                 => auth()->id(),
+                'approved_at'                 => now(),
             ]);
 
+            // Refund balance on TL rejection
             $year = Carbon::parse($leave->start_date)->year;
-
             LeaveBalance::where('employee_id', $leave->employee_id)
                         ->where('leave_type_id', $leave->leave_type_id)
                         ->where('year', $year)
                         ->decrement('used_days', $leave->days);
-
             LeaveBalance::where('employee_id', $leave->employee_id)
                         ->where('leave_type_id', $leave->leave_type_id)
                         ->where('year', $year)
@@ -209,16 +228,107 @@ class LeaveController extends Controller
         });
 
         return response()->json([
-            'message' => 'Leave rejected. Balance refunded.',
-            'data'    => new LeaveResource($leave->load(['employee', 'leaveType'])),
+            'message' => 'Leave rejected by team lead.',
+            'data'    => new LeaveResource($leave->load(['employee', 'leaveType', 'teamLead'])),
         ]);
     }
 
+    // ── HR/Admin Final Approve (can override TL rejection) ────────
+    public function approve(Request $request, Leave $leave): JsonResponse
+    {
+        if (!$this->isAdminOrHR()) {
+            return response()->json(['message' => 'Unauthorized.'], 403);
+        }
+
+        // HR can approve even if TL rejected — this is the override
+        // Block only if already HR-approved
+        if ($leave->status === 'approved') {
+            return response()->json(['message' => 'Leave is already approved.'], 422);
+        }
+
+        // If TL hasn't acted yet, warn but allow HR to approve anyway
+        $wasOverride = $leave->team_lead_status === 'rejected';
+
+        DB::transaction(function () use ($leave, $wasOverride) {
+            $leave->update([
+                'status'      => 'approved',
+                'approved_by' => auth()->id(),
+                'approved_at' => now(),
+                // If HR is overriding a TL rejection, restore balance first
+                // (balance was already refunded when TL rejected)
+                // We re-deduct it now
+            ]);
+
+            if ($wasOverride) {
+                // Re-deduct balance since TL rejection had refunded it
+                $year = Carbon::parse($leave->start_date)->year;
+                LeaveBalance::where('employee_id', $leave->employee_id)
+                            ->where('leave_type_id', $leave->leave_type_id)
+                            ->where('year', $year)
+                            ->increment('used_days', $leave->days);
+                LeaveBalance::where('employee_id', $leave->employee_id)
+                            ->where('leave_type_id', $leave->leave_type_id)
+                            ->where('year', $year)
+                            ->decrement('remaining_days', $leave->days);
+            }
+        });
+
+        $message = $wasOverride
+            ? 'Leave approved by HR (team lead rejection overridden).'
+            : 'Leave approved successfully.';
+
+        return response()->json([
+            'message' => $message,
+            'data'    => new LeaveResource($leave->load(['employee', 'leaveType', 'teamLead'])),
+        ]);
+    }
+
+    // ── HR/Admin Reject ───────────────────────────────────────────
+    public function reject(Request $request, Leave $leave): JsonResponse
+    {
+        if (!$this->isAdminOrHR()) {
+            return response()->json(['message' => 'Unauthorized.'], 403);
+        }
+
+        if ($leave->status === 'approved') {
+            return response()->json(['message' => 'Cannot reject an already approved leave.'], 422);
+        }
+
+        $request->validate(['rejection_reason' => ['required', 'string', 'min:5']]);
+
+        DB::transaction(function () use ($request, $leave) {
+            $leave->update([
+                'status'           => 'rejected',
+                'rejection_reason' => $request->rejection_reason,
+                'approved_by'      => auth()->id(),
+                'approved_at'      => now(),
+            ]);
+
+            // Only refund if not already refunded by TL rejection
+            if ($leave->getOriginal('status') === 'pending') {
+                $year = Carbon::parse($leave->start_date)->year;
+                LeaveBalance::where('employee_id', $leave->employee_id)
+                            ->where('leave_type_id', $leave->leave_type_id)
+                            ->where('year', $year)
+                            ->decrement('used_days', $leave->days);
+                LeaveBalance::where('employee_id', $leave->employee_id)
+                            ->where('leave_type_id', $leave->leave_type_id)
+                            ->where('year', $year)
+                            ->increment('remaining_days', $leave->days);
+            }
+        });
+
+        return response()->json([
+            'message' => 'Leave rejected.',
+            'data'    => new LeaveResource($leave->load(['employee', 'leaveType', 'teamLead'])),
+        ]);
+    }
+
+    // ── Delete ────────────────────────────────────────────────────
     public function destroy(Leave $leave): JsonResponse
     {
         $user = auth()->user();
 
-        // Only admin/HR or the employee themselves can delete
         if (!$this->isAdminOrHR() && $leave->employee_id !== $user->employee?->id) {
             return response()->json(['message' => 'Unauthorized.'], 403);
         }
@@ -227,21 +337,18 @@ class LeaveController extends Controller
             return response()->json(['message' => 'Cannot delete approved leaves.'], 422);
         }
 
-        \DB::transaction(function () use ($leave) {
+        DB::transaction(function () use ($leave) {
             if ($leave->status === 'pending') {
                 $year = Carbon::parse($leave->start_date)->year;
-
                 LeaveBalance::where('employee_id', $leave->employee_id)
                             ->where('leave_type_id', $leave->leave_type_id)
                             ->where('year', $year)
                             ->decrement('used_days', $leave->days);
-
                 LeaveBalance::where('employee_id', $leave->employee_id)
                             ->where('leave_type_id', $leave->leave_type_id)
                             ->where('year', $year)
                             ->increment('remaining_days', $leave->days);
             }
-
             $leave->delete();
         });
 

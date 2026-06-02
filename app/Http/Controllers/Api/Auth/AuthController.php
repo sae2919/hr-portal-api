@@ -13,12 +13,8 @@ use Illuminate\Validation\ValidationException;
 
 class AuthController extends Controller
 {
-    /**
-     * Login user and return token
-     */
     public function login(LoginRequest $request): JsonResponse
     {
-        // Attempt login
         if (!Auth::attempt($request->only('email', 'password'))) {
             throw ValidationException::withMessages([
                 'email' => ['The provided credentials are incorrect.'],
@@ -29,7 +25,6 @@ class AuthController extends Controller
                     ->with('employee')
                     ->first();
 
-        // Check if account is active
         if ($user->status === 'inactive') {
             Auth::logout();
             return response()->json([
@@ -37,56 +32,34 @@ class AuthController extends Controller
             ], 403);
         }
 
-        // Update last login timestamp
         $user->update(['last_login_at' => now()]);
-
-        // Revoke older tokens to ensure clean single active session structure
         $user->tokens()->delete();
-
-        // Create new token string parameter safely
         $plainTextToken = $user->createToken('auth_token')->plainTextToken;
 
-       return response()->json([
+        return response()->json([
             'message' => 'Login successful',
-            'token'   => $plainTextToken, 
-            // FIXED: Send the raw user array containing your exact database updates directly
-            'user'    => $user, 
+            'token'   => $plainTextToken,
+            'user'    => new UserResource($user),  // ← includes permissions now
         ], 200);
     }
 
-    /**
-     * Get authenticated user
-     */
     public function me(Request $request): JsonResponse
     {
         $user = $request->user()->load('employee');
-
         return response()->json([
             'user' => new UserResource($user),
         ]);
     }
 
-    /**
-     * Logout user and revoke token
-     */
     public function logout(Request $request): JsonResponse
     {
         $request->user()->currentAccessToken()->delete();
-
-        return response()->json([
-            'message' => 'Logged out successfully',
-        ]);
+        return response()->json(['message' => 'Logged out successfully']);
     }
 
-    /**
-     * Logout from all devices
-     */
     public function logoutAll(Request $request): JsonResponse
     {
         $request->user()->tokens()->delete();
-
-        return response()->json([
-            'message' => 'Logged out from all devices',
-        ]);
+        return response()->json(['message' => 'Logged out from all devices']);
     }
 }

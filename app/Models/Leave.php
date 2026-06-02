@@ -14,12 +14,16 @@ class Leave extends Model
         'employee_id', 'leave_type_id', 'start_date',
         'end_date', 'days', 'reason', 'status',
         'approved_by', 'rejection_reason', 'approved_at',
+        'team_lead_status', 'team_lead_id',
+        'team_lead_rejection_reason', 'team_lead_acted_at', 'hr_override',
     ];
 
     protected $casts = [
-        'start_date'  => 'date',
-        'end_date'    => 'date',
-        'approved_at' => 'datetime',
+        'start_date'         => 'date',
+        'end_date'           => 'date',
+        'approved_at'        => 'datetime',
+        'team_lead_acted_at' => 'datetime',
+        'hr_override'        => 'boolean',
     ];
 
     public function employee()
@@ -35,6 +39,11 @@ class Leave extends Model
     public function approvedBy()
     {
         return $this->belongsTo(User::class, 'approved_by');
+    }
+
+    public function teamLead()
+    {
+        return $this->belongsTo(User::class, 'team_lead_id');
     }
 
     public static function calculateDays(string $start, string $end): float

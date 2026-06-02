@@ -11,6 +11,50 @@ use Carbon\Carbon;
 
 class WorkspaceController extends Controller
 {
+    // ── Role tier resolution (mirrors frontend resolveRoleTier) ──────────────
+    // Priority: Spatie roles → users.role column → designation title
+    private function resolveRoleTier($user, $designation = null): string
+    {
+        $spatieRoles = $user->getRoleNames()
+            ->map(fn($r) => strtolower(str_replace([' ', '-'], '_', $r)))
+            ->toArray();
+
+        $adminRoles    = ['admin', 'super_admin', 'superadmin', 'hr_admin'];
+        $hrRoles       = ['hr', 'hr_manager'];
+        $managerRoles  = ['manager'];
+        $salesMgrRoles = ['sales_manager'];
+        $teamLeadRoles = ['team_lead'];
+
+        // 1. Check Spatie roles
+        foreach ($adminRoles   as $r) { if (in_array($r, $spatieRoles)) return 'admin'; }
+        foreach ($hrRoles       as $r) { if (in_array($r, $spatieRoles)) return 'hr'; }
+        foreach ($managerRoles  as $r) { if (in_array($r, $spatieRoles)) return 'manager'; }
+        foreach ($salesMgrRoles as $r) { if (in_array($r, $spatieRoles)) return 'sales_manager'; }
+        foreach ($teamLeadRoles as $r) { if (in_array($r, $spatieRoles)) return 'team_lead'; }
+
+        // 2. Fallback: users.role column
+        $roleCol = strtolower(str_replace([' ', '-'], '_', $user->role ?? ''));
+        if (in_array($roleCol, $adminRoles))    return 'admin';
+        if (in_array($roleCol, $hrRoles))       return 'hr';
+        if ($roleCol === 'manager')             return 'manager';
+        if ($roleCol === 'sales_manager')       return 'sales_manager';
+        if ($roleCol === 'team_lead')           return 'team_lead';
+
+        // 3. Fallback: designation title
+        if ($designation) {
+            $d = strtolower($designation);
+            $managerDesignations  = ['manager', 'senior manager', 'department manager'];
+            $teamLeadDesignations = [
+                'sales head', 'seo lead', 'tech lead', 'technical lead',
+                'team lead', 'lead', 'head', 'seo head', 'dev lead',
+            ];
+            foreach ($managerDesignations  as $kw) { if (str_contains($d, $kw)) return 'manager'; }
+            foreach ($teamLeadDesignations as $kw) { if (str_contains($d, $kw)) return 'team_lead'; }
+        }
+
+        return 'employee';
+    }
+
     public function stats(Request $request): JsonResponse
     {
         $user = $request->user();
@@ -34,6 +78,13 @@ class WorkspaceController extends Controller
                 ->first();
         }
 
+        // ── Resolve Designation title (for role fallback) ─────────────────────
+        $designationTitle = null;
+        if ($employee && !empty($employee->designation_id) && Schema::hasTable('designations')) {
+            $desig = DB::table('designations')->where('id', $employee->designation_id)->first();
+            $designationTitle = $desig->title ?? $desig->name ?? null;
+        }
+
         // ── Resolve Department ────────────────────────────────────────────────
         $deptCode = 'GENERAL';
         $deptId   = null;
@@ -48,14 +99,16 @@ class WorkspaceController extends Controller
             }
         }
 
-        $roleTier = strtolower($user->role ?? 'employee');
+        // ── Resolve Role Tier ─────────────────────────────────────────────────
+        $roleTier = $this->resolveRoleTier($user, $designationTitle);
 
         // ── Base Payload ──────────────────────────────────────────────────────
         $payload = [
-            'department' => $deptName ?? $deptCode,
-            'dept_code'  => $deptCode,
-            'role_tier'  => $roleTier,
-            'user_name'  => $user->name,
+            'department'  => $deptName ?? $deptCode,
+            'dept_code'   => $deptCode,
+            'role_tier'   => $roleTier,
+            'user_name'   => $user->name,
+            'designation' => $designationTitle,
         ];
 
         // ── Manager / Team Lead Stats (department-scoped) ─────────────────────
@@ -71,7 +124,7 @@ class WorkspaceController extends Controller
 
             $deptCount = $deptEmployeeIds->count();
 
-            $presentToday = Schema::hasTable('attendances')
+            $presentToday = Schema::hasTable('attendances') && $deptCount > 0
                 ? DB::table('attendances')
                     ->whereIn('employee_id', $deptEmployeeIds)
                     ->whereDate('date', $today)
@@ -79,7 +132,7 @@ class WorkspaceController extends Controller
                     ->count()
                 : 0;
 
-            $onLeaveToday = Schema::hasTable('attendances')
+            $onLeaveToday = Schema::hasTable('attendances') && $deptCount > 0
                 ? DB::table('attendances')
                     ->whereIn('employee_id', $deptEmployeeIds)
                     ->whereDate('date', $today)
@@ -89,7 +142,7 @@ class WorkspaceController extends Controller
 
             $absentToday = max(0, $deptCount - $presentToday - $onLeaveToday);
 
-            $pendingApprovals = Schema::hasTable('leaves')
+            $pendingApprovals = Schema::hasTable('leaves') && $deptCount > 0
                 ? DB::table('leaves')
                     ->whereIn('employee_id', $deptEmployeeIds)
                     ->where('status', 'pending')
@@ -116,7 +169,6 @@ class WorkspaceController extends Controller
         if ($roleTier === 'sales_manager') {
             $today = Carbon::today();
 
-            // All employees in their department (if linked) or all sales employees
             $salesEmployeeIds = collect();
             if ($deptId && Schema::hasTable('employees')) {
                 $salesEmployeeIds = DB::table('employees')
@@ -153,13 +205,24 @@ class WorkspaceController extends Controller
                 ? DB::table('deals')->where('status', 'open')->count()
                 : 0;
 
+            $payload['manager_stats'] = [
+                'dept_employee_count'          => $teamCount,
+                'dept_present_today'           => $presentToday,
+                'dept_on_leave'                => 0,
+                'dept_absent_today'            => max(0, $teamCount - $presentToday),
+                'dept_pending_leave_approvals' => $pendingApprovals,
+                'dept_attendance_rate'         => $teamCount > 0
+                    ? round(($presentToday / $teamCount) * 100)
+                    : 0,
+            ];
+
             $payload['sales_manager_stats'] = [
-                'team_count'          => $teamCount,
-                'present_today'       => $presentToday,
-                'pending_approvals'   => $pendingApprovals,
-                'monthly_revenue'     => $monthlyRevenue,
-                'pipeline_deals'      => $pipelineDeals,
-                'attendance_rate'     => $teamCount > 0
+                'team_count'        => $teamCount,
+                'present_today'     => $presentToday,
+                'pending_approvals' => $pendingApprovals,
+                'monthly_revenue'   => $monthlyRevenue,
+                'pipeline_deals'    => $pipelineDeals,
+                'attendance_rate'   => $teamCount > 0
                     ? round(($presentToday / $teamCount) * 100)
                     : 0,
             ];

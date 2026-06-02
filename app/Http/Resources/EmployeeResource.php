@@ -18,7 +18,7 @@ class EmployeeResource extends JsonResource
             'email'           => $this->email,
             'phone'           => $this->phone,
             'gender'          => $this->gender,
-            'blood_group' => $this->blood_group,
+            'blood_group'     => $this->blood_group,
             'dob'             => $this->dob?->toDateString(),
             'address'         => $this->address,
             'city'            => $this->city,
@@ -27,6 +27,7 @@ class EmployeeResource extends JsonResource
             'pincode'         => $this->pincode,
             'department_id'   => $this->department_id,
             'designation_id'  => $this->designation_id,
+            'reporting_to'    => $this->reporting_to,
             'department'      => $this->whenLoaded('department', fn() => [
                 'id'   => $this->department->id,
                 'name' => $this->department->name,
@@ -35,6 +36,13 @@ class EmployeeResource extends JsonResource
                 'id'    => $this->designation->id,
                 'title' => $this->designation->title,
             ]),
+            'manager'         => $this->whenLoaded('manager', fn() => $this->manager ? [
+                'id'            => $this->manager->id,
+                'full_name'     => $this->manager->full_name,
+                'employee_code' => $this->manager->employee_code,
+                'designation'   => $this->manager->designation?->title,
+                'photo'         => $this->manager->photo_url,
+            ] : null),
             'joining_date'    => $this->joining_date?->toDateString(),
             'exit_date'       => $this->exit_date?->toDateString(),
             'employment_type' => $this->employment_type,
@@ -49,7 +57,29 @@ class EmployeeResource extends JsonResource
             'bank_account_number' => $this->bank_account_number,
             'bank_ifsc'           => $this->bank_ifsc,
             'bank_branch'         => $this->bank_branch,
-            'created_at'          => $this->created_at->toDateString(),
+            // Salary
+            'basic_salary'     => $this->basic_salary ?? 0,
+            'hra'              => $this->hra ?? 0,
+            'allowances'       => $this->allowances ?? [],  // ✅ Return as JSON array
+            'total_allowances' => $this->total_allowances ?? 0,  // ✅ Helper total
+            'bonus'            => $this->bonus ?? 0,  // ✅ New field
+            'pf_percentage'    => $this->pf_percentage ?? 0,
+            'pf_deduction'     => $this->pf_deduction ?? 0,
+            'esi_employee'     => $this->esi_employee ?? 0,
+            'esi_employer'     => $this->esi_employer ?? 0,
+            'pt_amount'        => $this->pt_amount ?? 0,
+            'pt_state'         => $this->pt_state,
+            'tds_amount'       => $this->tds_amount ?? 0,
+            'other_deductions' => $this->other_deductions ?? 0,
+            'ctc'              => $this->ctc ?? 0,
+            // Documents
+            'pan_number'       => $this->pan_number,
+            'aadhaar_number'   => $this->aadhaar_number,
+            'driving_license'  => $this->driving_license,
+            'passport_number'  => $this->passport_number,
+            'voter_id'         => $this->voter_id,
+            'uan_number'       => $this->uan_number,
+            'created_at'       => $this->created_at?->toDateString(),
         ];
     }
 }

@@ -17,6 +17,9 @@ class Payroll extends Model
         'working_days',
         'present_days',
         'leave_days',
+        'lop_days',
+        'lop_deduction',
+        'basic_salary',
         'gross_salary',
         'total_deductions',
         'net_salary',
@@ -27,7 +30,7 @@ class Payroll extends Model
 
     protected $casts = [
         'processed_at' => 'datetime',
-        'paid_at' => 'datetime',
+        'paid_at'      => 'datetime',
     ];
 
     public function employee()

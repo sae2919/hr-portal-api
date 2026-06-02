@@ -12,9 +12,11 @@ class EmployeeController extends Controller
 {
     // ── Role helpers ──────────────────────────────────────────────
     private function isAdminOrHR(): bool
-    {
-        return auth()->user()->hasRole('admin') || auth()->user()->hasRole('hr');
-    }
+{
+    return auth()->user()->hasRole('super_admin')
+        || auth()->user()->hasRole('admin')
+        || auth()->user()->hasRole('hr');
+}
 
     private function isManager(): bool
     {

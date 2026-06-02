@@ -236,4 +236,5 @@ Route::prefix('v1')->group(function () {
         Route::put('/settings',  [SettingsController::class, 'update']);
 
     });
+    
 });

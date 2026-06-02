@@ -200,7 +200,7 @@ class NotificationController extends Controller
 
         // ── 4. PAYROLL NOTIFICATIONS ──────────────────────────────────────────
 
-        if (in_array($role, ['admin', 'hr'])) {
+        if (in_array($role, ['super admin','admin', 'hr'])) {
             // Admin/HR: unpaid payrolls this month
             $unpaidCount = Payroll::where('status', 'pending')
                 ->whereMonth('payroll_month', $now->month)

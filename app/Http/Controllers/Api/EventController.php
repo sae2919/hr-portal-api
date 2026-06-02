@@ -209,7 +209,7 @@ class EventController extends Controller
     public function store(Request $request): JsonResponse
     {
         try {
-            if (!in_array(auth()->user()->role, ['admin', 'hr'])) {
+            if (!in_array(auth()->user()->role, ['super_admin', 'admin', 'hr'])) {
                 return response()->json(['success' => false, 'message' => 'Unauthorized'], 403);
             }
             

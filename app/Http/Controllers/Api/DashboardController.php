@@ -12,13 +12,75 @@ use Illuminate\Http\JsonResponse;
 
 class DashboardController extends Controller
 {
+    private function isAdminOrHR($user): bool
+{
+    // Add 'super_admin' here
+    if ($user->hasRole('super_admin') || $user->hasRole('admin') || $user->hasRole('hr')) return true;
+
+    $employee = $user->employee;
+    if ($employee) {
+        $designation = strtolower($employee->designation?->title ?? '');
+        if (str_contains($designation, 'ceo') || str_contains($designation, 'founder') || 
+            str_contains($designation, 'president') || str_contains($designation, 'co-founder') || 
+            str_contains($designation, 'co_founder')) {
+            return true;
+        }
+    }
+    return false;
+}
+
+    private function isManager($user): bool
+    {
+        if ($this->isAdminOrHR($user)) return false;
+        if ($user->hasRole('manager')) return true;
+
+        $employee = $user->employee;
+        if ($employee) {
+            $level = strtolower($employee->position_level ?? '');
+            if ($level === 'manager') return true;
+
+            $designation = strtolower($employee->designation?->title ?? '');
+            if (str_contains($designation, 'manager')) return true;
+        }
+        return false;
+    }
+
+    private function isTeamLead($user): bool
+    {
+        if ($this->isAdminOrHR($user)) return false;
+        if ($user->hasRole('team_lead')) return true;
+
+        $employee = $user->employee;
+        if ($employee) {
+            $level = strtolower($employee->position_level ?? '');
+            if ($level === 'team_lead') return true;
+
+            $designation = strtolower($employee->designation?->title ?? '');
+            if (str_contains($designation, 'team lead') || str_contains($designation, 'lead')) return true;
+        }
+        return false;
+    }
+
+    private function isSalesMgr($user): bool
+    {
+        if ($this->isAdminOrHR($user)) return false;
+        if ($user->hasRole('sales_manager')) return true;
+
+        $employee = $user->employee;
+        if ($employee) {
+            $designation = strtolower($employee->designation?->title ?? '');
+            if (str_contains($designation, 'sales manager')) return true;
+        }
+        return false;
+    }
+
     public function stats(): JsonResponse
     {
         $user       = auth()->user();
-        $isAdmin    = $user->hasRole('admin') || $user->hasRole('hr');
-        $isManager  = $user->hasRole('manager');
-        $isTeamLead = $user->hasRole('team_lead');
-        $isSalesMgr = $user->hasRole('sales_manager');
+        $isAdmin    = $this->isAdminOrHR($user);
+        $isManager  = $this->isManager($user);
+        $isTeamLead = $this->isTeamLead($user);
+        $isSalesMgr = $this->isSalesMgr($user);
         $employeeId = $user->employee?->id;
         $deptId     = $user->employee?->department_id;
 

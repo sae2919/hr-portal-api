@@ -16,14 +16,16 @@ class AttendanceController extends Controller
     // ── Role helpers ──────────────────────────────────────────────
 
     private function isAdminOrHR(): bool
-    {
-        return auth()->user()->hasRole('admin') || auth()->user()->hasRole('hr');
-    }
-
+{
+    return auth()->user()->hasRole('admin')
+        || auth()->user()->hasRole('hr')
+        || auth()->user()->hasRole('super admin')
+        || auth()->user()->hasRole('super_admin');
+}
     private function isManager(): bool
     {
         $user = auth()->user();
-        if ($user->hasRole('admin') || $user->hasRole('hr')) return false;
+        if ($user->hasRole('admin') || $user->hasRole('hr') || auth()->user()->hasRole('super admin') || auth()->user()->hasRole('super_admin')) return false;
         if ($user->hasRole('manager')) return true;
 
         $employee = $user->employee;
@@ -40,7 +42,7 @@ class AttendanceController extends Controller
     private function isTeamLead(): bool
     {
         $user = auth()->user();
-        if ($user->hasRole('admin') || $user->hasRole('hr')) return false;
+        if ($user->hasRole('admin') || $user->hasRole('hr') || auth()->user()->hasRole('super admin') || auth()->user()->hasRole('super_admin')) return false;
         if ($user->hasRole('team_lead')) return true;
 
         $employee = $user->employee;

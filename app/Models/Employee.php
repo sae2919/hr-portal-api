@@ -6,6 +6,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use App\Models\Payroll;
 use App\Models\SalaryStructure;
+use App\Models\Attendance;
 
 class Employee extends Model
 {
@@ -157,7 +158,10 @@ class Employee extends Model
     {
         return "{$this->first_name} {$this->last_name}";
     }
-
+    public function attendances()
+{
+    return $this->hasMany(Attendance::class);
+}
     public function getPhotoUrlAttribute(): ?string
     {
         if (!$this->photo) return null;

@@ -62,7 +62,7 @@ class EventWishController extends Controller
         $sender = Auth::user();
 
         // Prevent duplicate wishes (allow admin / hr to bypass)
-        $isPrivileged = in_array($sender->role, ['admin', 'hr']);
+        $isPrivileged = in_array($sender->role, ['super_admin', 'admin', 'hr']);
 
         if (!$isPrivileged) {
             $alreadySent = EventWish::where('sender_id', $sender->id)
@@ -118,7 +118,7 @@ class EventWishController extends Controller
         $user = Auth::user();
 
         $isOwner      = $wish->sender_id === $user->id;
-        $isPrivileged = in_array($user->role, ['admin', 'hr']);
+        $isPrivileged = in_array($user->role, ['super_admin', 'admin', 'hr']);
 
         if (!$isOwner && !$isPrivileged) {
             return response()->json([

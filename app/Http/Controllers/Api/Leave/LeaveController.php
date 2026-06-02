@@ -54,9 +54,25 @@ class LeaveController extends Controller
                 $query->whereHas('employee', fn($q) => $q->where('department_id', $request->department_id));
             }
         } elseif ($this->isTeamLead()) {
-            // Team lead: only their dept
-            $query->whereHas('employee', fn($q) => $q->where('department_id', $this->myDeptId()));
-            if ($request->filled('employee_id')) $query->where('employee_id', $request->employee_id);
+            // Team lead / Head:
+            // 1. See leaves of employees who report directly to them
+            // 2. See their own leaves
+            $myEmployeeId = $user->employee?->id;
+            
+            if ($request->filled('employee_id')) {
+                $reqEmpId = (int) $request->employee_id;
+                $query->where('employee_id', $reqEmpId)
+                      ->whereHas('employee', function($q) use ($myEmployeeId, $reqEmpId) {
+                          if ($reqEmpId !== $myEmployeeId) {
+                              $q->where('reporting_to', $myEmployeeId);
+                          }
+                      });
+            } else {
+                $query->whereHas('employee', function($q) use ($myEmployeeId) {
+                    $q->where('reporting_to', $myEmployeeId)
+                      ->orWhere('id', $myEmployeeId);
+                });
+            }
         } else {
             // Employee: own leaves only
             $query->where('employee_id', $user->employee?->id);
@@ -90,6 +106,54 @@ class LeaveController extends Controller
             'reason'        => ['required', 'string', 'min:10'],
         ]);
 
+        $leaveType = \App\Models\LeaveType::find($request->leave_type_id);
+        $isCompOff = str_contains(strtolower($leaveType->name ?? ''), 'compensatory') || str_contains(strtolower($leaveType->name ?? ''), 'comp');
+
+        if ($isCompOff && !$isAdminOrHR) {
+            // 1. Check leave dates are today or tomorrow only
+            $todayStr = Carbon::today()->toDateString();
+            $tomorrowStr = Carbon::tomorrow()->toDateString();
+
+            if ($request->start_date !== $todayStr && $request->start_date !== $tomorrowStr) {
+                return response()->json(['message' => 'Comp Off can only be applied for today or tomorrow.'], 422);
+            }
+            if ($request->end_date !== $todayStr && $request->end_date !== $tomorrowStr) {
+                return response()->json(['message' => 'Comp Off can only be applied for today or tomorrow.'], 422);
+            }
+
+            // 2. Check if employee worked today (attendance record exists for today with check_in or status present/late/half_day)
+            $attendance = \App\Models\Attendance::where('employee_id', $request->employee_id)
+                ->whereDate('date', Carbon::today())
+                ->first();
+
+            if (!$attendance || (!$attendance->check_in && !in_array($attendance->status, ['present', 'late', 'half_day']))) {
+                return response()->json(['message' => 'You can only apply for a Comp Off if you have worked today.'], 422);
+            }
+        }
+
+        $isCompOffClaim = false;
+        if ($isCompOff) {
+            if ($isAdminOrHR) {
+                $isCompOffClaim = true;
+            } else {
+                $todayStr = Carbon::today()->toDateString();
+                $tomorrowStr = Carbon::tomorrow()->toDateString();
+                $isTodayOrTomorrow = ($request->start_date === $todayStr || $request->start_date === $tomorrowStr) && 
+                                     ($request->end_date === $todayStr || $request->end_date === $tomorrowStr);
+                                     
+                if ($isTodayOrTomorrow) {
+                    $attendance = \App\Models\Attendance::where('employee_id', $request->employee_id)
+                        ->whereDate('date', Carbon::today())
+                        ->first();
+                    $workedToday = $attendance && ($attendance->check_in || in_array($attendance->status, ['present', 'late', 'half_day']));
+                    
+                    if ($workedToday) {
+                        $isCompOffClaim = true;
+                    }
+                }
+            }
+        }
+
         $startDate = Carbon::parse($request->start_date);
         $days      = Leave::calculateDays($request->start_date, $request->end_date);
 
@@ -98,48 +162,60 @@ class LeaveController extends Controller
                                ->where('year', $startDate->year)
                                ->first();
 
-        if ($balance && $balance->remaining_days < $days) {
-            return response()->json([
-                'message' => "Insufficient leave balance. Available: {$balance->remaining_days} days.",
-            ], 422);
+        if (!$isCompOffClaim) {
+            if (!$balance || $balance->remaining_days < $days) {
+                return response()->json([
+                    'message' => "Insufficient leave balance. Available: " . ($balance ? $balance->remaining_days : 0) . " days.",
+                ], 422);
+            }
         }
 
         $leave = null;
 
-        // Admin/HR applying = auto approved (skip TL step)
-        $status           = $isAdminOrHR ? 'approved' : 'pending';
-        $teamLeadStatus   = $isAdminOrHR ? 'approved' : 'pending';
-        $approvedBy       = $isAdminOrHR ? auth()->id() : null;
-        $approvedAt       = $isAdminOrHR ? now()        : null;
+        // Admin/HR applying = auto approved (skip TL step) for normal leaves.
+        // For Comp Off, they must go through the TL approval step first.
+        $isCompOffAppliedByAdmin = $isCompOff && $isAdminOrHR;
 
-        DB::transaction(function () use ($request, $days, $startDate, $status, $teamLeadStatus, $approvedBy, $approvedAt, &$leave) {
+        $status           = ($isAdminOrHR && !$isCompOffAppliedByAdmin) ? 'approved' : 'pending';
+        $teamLeadStatus   = ($isAdminOrHR && !$isCompOffAppliedByAdmin) ? 'approved' : 'pending';
+        $approvedBy       = ($isAdminOrHR && !$isCompOffAppliedByAdmin) ? auth()->id() : null;
+        $approvedAt       = ($isAdminOrHR && !$isCompOffAppliedByAdmin) ? now()        : null;
+
+        DB::transaction(function () use ($request, $days, $startDate, $status, $teamLeadStatus, $approvedBy, $approvedAt, $isCompOffAppliedByAdmin, $isCompOffClaim, &$leave) {
             $leave = Leave::create([
-                'employee_id'      => $request->employee_id,
-                'leave_type_id'    => $request->leave_type_id,
-                'start_date'       => $request->start_date,
-                'end_date'         => $request->end_date,
-                'days'             => $days,
-                'reason'           => $request->reason,
-                'status'           => $status,
-                'team_lead_status' => $teamLeadStatus,
-                'approved_by'      => $approvedBy,
-                'approved_at'      => $approvedAt,
+                'employee_id'       => $request->employee_id,
+                'leave_type_id'     => $request->leave_type_id,
+                'start_date'        => $request->start_date,
+                'end_date'          => $request->end_date,
+                'days'              => $days,
+                'reason'            => $request->reason,
+                'status'            => $status,
+                'team_lead_status'  => $teamLeadStatus,
+                'approved_by'       => $approvedBy,
+                'approved_at'       => $approvedAt,
+                'applied_by_admin'  => $isCompOffAppliedByAdmin,
+                'is_comp_off_claim' => $isCompOffClaim,
             ]);
 
-            LeaveBalance::where('employee_id', $request->employee_id)
-                        ->where('leave_type_id', $request->leave_type_id)
-                        ->where('year', $startDate->year)
-                        ->increment('used_days', $days);
+            // Only deduct balance immediately if this is NOT a Comp Off claim
+            if (!$isCompOffClaim) {
+                LeaveBalance::where('employee_id', $request->employee_id)
+                            ->where('leave_type_id', $request->leave_type_id)
+                            ->where('year', $startDate->year)
+                            ->increment('used_days', $days);
 
-            LeaveBalance::where('employee_id', $request->employee_id)
-                        ->where('leave_type_id', $request->leave_type_id)
-                        ->where('year', $startDate->year)
-                        ->decrement('remaining_days', $days);
+                LeaveBalance::where('employee_id', $request->employee_id)
+                            ->where('leave_type_id', $request->leave_type_id)
+                            ->where('year', $startDate->year)
+                            ->decrement('remaining_days', $days);
+            }
         });
 
-        $message = $isAdminOrHR
+        $message = ($isAdminOrHR && !$isCompOffAppliedByAdmin)
             ? 'Leave added and automatically approved.'
-            : 'Leave application submitted. Awaiting team lead review.';
+            : ($isCompOffAppliedByAdmin 
+                ? 'Comp Off application submitted on behalf of employee. Awaiting team lead review.' 
+                : 'Leave application submitted. Awaiting team lead review.');
 
         return response()->json([
             'message' => $message,
@@ -154,10 +230,14 @@ class LeaveController extends Controller
             return response()->json(['message' => 'Unauthorized.'], 403);
         }
 
-        // Team lead can only act on their own dept
+        if ($leave->employee_id === auth()->user()->employee?->id) {
+            return response()->json(['message' => 'You cannot approve your own leave request.'], 422);
+        }
+
+        // Team lead can only act on employees who report directly to them
         if ($this->isTeamLead() && !$this->isAdminOrHR()) {
-            if ($leave->employee->department_id !== $this->myDeptId()) {
-                return response()->json(['message' => 'Unauthorized — not your department.'], 403);
+            if ($leave->employee->reporting_to !== auth()->user()->employee?->id) {
+                return response()->json(['message' => 'Unauthorized — employee does not report to you.'], 403);
             }
         }
 
@@ -167,6 +247,38 @@ class LeaveController extends Controller
 
         if ($leave->status !== 'pending') {
             return response()->json(['message' => 'Leave is no longer pending.'], 422);
+        }
+
+        $isCompOff = str_contains(strtolower($leave->leaveType->name ?? ''), 'compensatory') || str_contains(strtolower($leave->leaveType->name ?? ''), 'comp');
+        $isCompOffAppliedByAdmin = $isCompOff && $leave->applied_by_admin;
+
+        if ($isCompOffAppliedByAdmin) {
+            DB::transaction(function () use ($leave) {
+                $leave->update([
+                    'team_lead_status'   => 'approved',
+                    'team_lead_id'       => auth()->id(),
+                    'team_lead_acted_at' => now(),
+                    'status'             => 'approved',
+                    'approved_by'        => auth()->id(),
+                    'approved_at'        => now(),
+                ]);
+
+                // Earning Claim: Increment balance upon approval
+                if ($leave->is_comp_off_claim) {
+                    $year = Carbon::parse($leave->start_date)->year;
+                    $balance = LeaveBalance::firstOrCreate(
+                        ['employee_id' => $leave->employee_id, 'leave_type_id' => $leave->leave_type_id, 'year' => $year],
+                        ['total_days' => 0, 'used_days' => 0, 'remaining_days' => 0]
+                    );
+                    $balance->increment('total_days', $leave->days);
+                    $balance->increment('remaining_days', $leave->days);
+                }
+            });
+
+            return response()->json([
+                'message' => 'Team lead approved. Since this Comp Off was applied by Admin/HR, it has been automatically finalized and approved.',
+                'data'    => new LeaveResource($leave->load(['employee', 'leaveType', 'teamLead'])),
+            ]);
         }
 
         $leave->update([
@@ -189,9 +301,14 @@ class LeaveController extends Controller
             return response()->json(['message' => 'Unauthorized.'], 403);
         }
 
+        if ($leave->employee_id === auth()->user()->employee?->id) {
+            return response()->json(['message' => 'You cannot reject your own leave request.'], 422);
+        }
+
+        // Team lead can only act on employees who report directly to them
         if ($this->isTeamLead() && !$this->isAdminOrHR()) {
-            if ($leave->employee->department_id !== $this->myDeptId()) {
-                return response()->json(['message' => 'Unauthorized — not your department.'], 403);
+            if ($leave->employee->reporting_to !== auth()->user()->employee?->id) {
+                return response()->json(['message' => 'Unauthorized — employee does not report to you.'], 403);
             }
         }
 
@@ -215,16 +332,18 @@ class LeaveController extends Controller
                 'approved_at'                 => now(),
             ]);
 
-            // Refund balance on TL rejection
-            $year = Carbon::parse($leave->start_date)->year;
-            LeaveBalance::where('employee_id', $leave->employee_id)
-                        ->where('leave_type_id', $leave->leave_type_id)
-                        ->where('year', $year)
-                        ->decrement('used_days', $leave->days);
-            LeaveBalance::where('employee_id', $leave->employee_id)
-                        ->where('leave_type_id', $leave->leave_type_id)
-                        ->where('year', $year)
-                        ->increment('remaining_days', $leave->days);
+            // Refund balance on TL rejection ONLY if not a Comp Off claim
+            if (!$leave->is_comp_off_claim) {
+                $year = Carbon::parse($leave->start_date)->year;
+                LeaveBalance::where('employee_id', $leave->employee_id)
+                            ->where('leave_type_id', $leave->leave_type_id)
+                            ->where('year', $year)
+                            ->decrement('used_days', $leave->days);
+                LeaveBalance::where('employee_id', $leave->employee_id)
+                            ->where('leave_type_id', $leave->leave_type_id)
+                            ->where('year', $year)
+                            ->increment('remaining_days', $leave->days);
+            }
         });
 
         return response()->json([
@@ -238,6 +357,17 @@ class LeaveController extends Controller
     {
         if (!$this->isAdminOrHR()) {
             return response()->json(['message' => 'Unauthorized.'], 403);
+        }
+
+        if ($leave->employee_id === auth()->user()->employee?->id) {
+            return response()->json(['message' => 'You cannot approve your own leave request.'], 422);
+        }
+
+        $isCompOff = str_contains(strtolower($leave->leaveType->name ?? ''), 'compensatory') || str_contains(strtolower($leave->leaveType->name ?? ''), 'comp');
+        if ($isCompOff && $leave->team_lead_status !== 'approved') {
+            return response()->json([
+                'message' => 'This Comp Off request must first be approved by the Team Lead.',
+            ], 422);
         }
 
         // HR can approve even if TL rejected — this is the override
@@ -254,22 +384,30 @@ class LeaveController extends Controller
                 'status'      => 'approved',
                 'approved_by' => auth()->id(),
                 'approved_at' => now(),
-                // If HR is overriding a TL rejection, restore balance first
-                // (balance was already refunded when TL rejected)
-                // We re-deduct it now
             ]);
 
-            if ($wasOverride) {
-                // Re-deduct balance since TL rejection had refunded it
+            // Earning Claim: Increment balance upon approval
+            if ($leave->is_comp_off_claim) {
                 $year = Carbon::parse($leave->start_date)->year;
-                LeaveBalance::where('employee_id', $leave->employee_id)
-                            ->where('leave_type_id', $leave->leave_type_id)
-                            ->where('year', $year)
-                            ->increment('used_days', $leave->days);
-                LeaveBalance::where('employee_id', $leave->employee_id)
-                            ->where('leave_type_id', $leave->leave_type_id)
-                            ->where('year', $year)
-                            ->decrement('remaining_days', $leave->days);
+                $balance = LeaveBalance::firstOrCreate(
+                    ['employee_id' => $leave->employee_id, 'leave_type_id' => $leave->leave_type_id, 'year' => $year],
+                    ['total_days' => 0, 'used_days' => 0, 'remaining_days' => 0]
+                );
+                $balance->increment('total_days', $leave->days);
+                $balance->increment('remaining_days', $leave->days);
+            } else {
+                if ($wasOverride) {
+                    // Re-deduct balance since TL rejection had refunded it
+                    $year = Carbon::parse($leave->start_date)->year;
+                    LeaveBalance::where('employee_id', $leave->employee_id)
+                                ->where('leave_type_id', $leave->leave_type_id)
+                                ->where('year', $year)
+                                ->increment('used_days', $leave->days);
+                    LeaveBalance::where('employee_id', $leave->employee_id)
+                                ->where('leave_type_id', $leave->leave_type_id)
+                                ->where('year', $year)
+                                ->decrement('remaining_days', $leave->days);
+                }
             }
         });
 
@@ -290,6 +428,10 @@ class LeaveController extends Controller
             return response()->json(['message' => 'Unauthorized.'], 403);
         }
 
+        if ($leave->employee_id === auth()->user()->employee?->id) {
+            return response()->json(['message' => 'You cannot reject your own leave request.'], 422);
+        }
+
         if ($leave->status === 'approved') {
             return response()->json(['message' => 'Cannot reject an already approved leave.'], 422);
         }
@@ -304,8 +446,8 @@ class LeaveController extends Controller
                 'approved_at'      => now(),
             ]);
 
-            // Only refund if not already refunded by TL rejection
-            if ($leave->getOriginal('status') === 'pending') {
+            // Only refund if not already refunded by TL rejection AND not a Comp Off claim
+            if ($leave->getOriginal('status') === 'pending' && !$leave->is_comp_off_claim) {
                 $year = Carbon::parse($leave->start_date)->year;
                 LeaveBalance::where('employee_id', $leave->employee_id)
                             ->where('leave_type_id', $leave->leave_type_id)
@@ -338,7 +480,7 @@ class LeaveController extends Controller
         }
 
         DB::transaction(function () use ($leave) {
-            if ($leave->status === 'pending') {
+            if ($leave->status === 'pending' && !$leave->is_comp_off_claim) {
                 $year = Carbon::parse($leave->start_date)->year;
                 LeaveBalance::where('employee_id', $leave->employee_id)
                             ->where('leave_type_id', $leave->leave_type_id)

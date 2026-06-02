@@ -20,6 +20,7 @@ class DepartmentResource extends JsonResource
                 'id'   => $this->parent->id,
                 'name' => $this->parent->name,
             ]),
+            'employee_count'  => $this->employees_count,
             'employees_count' => $this->employees_count,
             'created_at'     => $this->created_at->toDateString(),
         ];

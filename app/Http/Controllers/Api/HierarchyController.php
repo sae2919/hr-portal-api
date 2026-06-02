@@ -22,13 +22,6 @@ class HierarchyController extends Controller
      */
     public function orgTree(): JsonResponse
     {
-        $user = auth()->user();
-        
-        // Only admin and HR can see full org tree
-        if (!in_array($user->role, ['admin', 'hr'])) {
-            return response()->json(['message' => 'Unauthorized'], 403);
-        }
-        
         $tree = $this->hierarchyService->buildOrgTree();
         
         return response()->json([
@@ -123,8 +116,7 @@ class HierarchyController extends Controller
     {
         $user = auth()->user();
         
-        // Only admin and HR can update reporting structure
-        if (!in_array($user->role, ['admin', 'hr'])) {
+        if (!$this->hasHierarchyAccess($user)) {
             return response()->json(['message' => 'Unauthorized'], 403);
         }
         
@@ -162,7 +154,9 @@ class HierarchyController extends Controller
      */
     public function potentialManagers(): JsonResponse
     {
-        if (!in_array(auth()->user()->role, ['admin', 'hr'])) {
+        $user = auth()->user();
+        
+        if (!$this->hasHierarchyAccess($user)) {
             return response()->json(['message' => 'Unauthorized'], 403);
         }
         
@@ -178,5 +172,30 @@ class HierarchyController extends Controller
                 'position_level' => $m->position_level,
             ])
         ]);
+    }
+
+    /**
+     * Check if a user has administrative hierarchy access
+     */
+    private function hasHierarchyAccess($user): bool
+    {
+        if (!$user) {
+            return false;
+        }
+
+        // 1. Check Spatie roles
+        $privilegedRoles = ['super_admin', 'super admin', 'superadmin', 'admin', 'hr_admin', 'hr', 'hr_manager'];
+        foreach ($privilegedRoles as $role) {
+            if ($user->hasRole($role)) {
+                return true;
+            }
+        }
+
+        // 2. Check role column fallback
+        if (in_array($user->role, $privilegedRoles)) {
+            return true;
+        }
+
+        return false;
     }
 }

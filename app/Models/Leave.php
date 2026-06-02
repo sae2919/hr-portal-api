@@ -16,6 +16,7 @@ class Leave extends Model
         'approved_by', 'rejection_reason', 'approved_at',
         'team_lead_status', 'team_lead_id',
         'team_lead_rejection_reason', 'team_lead_acted_at', 'hr_override',
+        'applied_by_admin', 'is_comp_off_claim',
     ];
 
     protected $casts = [
@@ -24,6 +25,8 @@ class Leave extends Model
         'approved_at'        => 'datetime',
         'team_lead_acted_at' => 'datetime',
         'hr_override'        => 'boolean',
+        'applied_by_admin'   => 'boolean',
+        'is_comp_off_claim'  => 'boolean',
     ];
 
     public function employee()

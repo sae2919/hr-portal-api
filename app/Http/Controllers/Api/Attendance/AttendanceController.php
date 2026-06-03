@@ -738,8 +738,8 @@ public function myCalendar(Request $request): JsonResponse
 
     public function monthLeaves(Request $request): JsonResponse
     {
-        if (!$this->isAdminOrHR() && !$this->isManager() && !$this->isTeamLead()) {
-            return response()->json(['message' => 'Forbidden.'], 403);
+        if (!auth()->check()) {
+            return response()->json(['message' => 'Unauthenticated.'], 401);
         }
 
         $year  = (int) $request->query('year',  now()->year);

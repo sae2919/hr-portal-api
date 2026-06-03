@@ -22,7 +22,7 @@ class LeaveTypeSeeder extends Seeder
         ];
 
         foreach ($types as $type) {
-            LeaveType::firstOrCreate(
+            LeaveType::updateOrCreate(
                 ['code' => $type['code']],
                 array_merge($type, [
                     'carry_forward' => $type['carry_forward'] ?? false,

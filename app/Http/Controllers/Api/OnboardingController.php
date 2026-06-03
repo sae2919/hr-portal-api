@@ -285,6 +285,10 @@ class OnboardingController extends Controller
                     'status' => 'completed',
                     'completed_at' => now(),
                 ]);
+
+            // Link asset allocations to the new employee
+            AssetAllocation::where('onboarding_request_id', $onboardingRequest->id)
+                ->update(['employee_id' => $employee->id]);
             
             DB::commit();
             

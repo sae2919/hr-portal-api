@@ -21,8 +21,10 @@ use App\Http\Controllers\Api\HierarchyController;
 use App\Http\Controllers\Api\EventController;
 use App\Http\Controllers\Api\EventWishController;
 use App\Http\Controllers\Api\QuoteController;
+use App\Http\Controllers\Api\SalaryRevisionController;
 use App\Http\Controllers\Api\NotificationController;
 use App\Http\Controllers\Api\OnboardingController;
+use App\Http\Controllers\Api\OffboardingController;
 use App\Http\Controllers\Api\DocumentController;
 use App\Http\Controllers\Api\AssetController;
 use App\Http\Controllers\Api\OfferLetterController;
@@ -135,6 +137,15 @@ Route::prefix('v1')->group(function () {
         Route::patch('/payroll-requests/{id}/fulfill',     [PayrollController::class, 'fulfillRequest']);
 
         // ──────────────────────────────────────
+        // SALARY REVISIONS
+        // ──────────────────────────────────────
+        Route::prefix('salary-revisions')->group(function () {
+            Route::get('/',                 [SalaryRevisionController::class, 'index']);
+            Route::post('/',                [SalaryRevisionController::class, 'store']);
+            Route::get('/{id}/download',    [SalaryRevisionController::class, 'download']);
+        });
+
+        // ──────────────────────────────────────
         // LEAVE MANAGEMENT
         // ──────────────────────────────────────
         Route::get('/my-leave-balances',                          [LeaveBalanceController::class, 'myBalances']);
@@ -213,6 +224,18 @@ Route::prefix('v1')->group(function () {
             Route::post('/{onboardingRequest}/offer-letter',           [OfferLetterController::class, 'generate']);
             Route::post('/offer-letters/{offerLetter}/send',           [OfferLetterController::class, 'send']);
             Route::get('/offer-letters/{offerLetter}/download',        [OfferLetterController::class, 'download']);
+        });
+
+        // ──────────────────────────────────────
+        // OFFBOARDING ROUTES
+        // ──────────────────────────────────────
+        Route::prefix('offboarding')->group(function () {
+            Route::get('/',                 [OffboardingController::class, 'index']);
+            Route::post('/',                [OffboardingController::class, 'store']);
+            Route::post('/{id}/approve',    [OffboardingController::class, 'approve']);
+            Route::post('/{id}/reject',     [OffboardingController::class, 'reject']);
+            Route::post('/{id}/complete',   [OffboardingController::class, 'complete']);
+            Route::patch('/{id}/tasks',     [OffboardingController::class, 'updateTasks']);
         });
 
         // ──────────────────────────────────────

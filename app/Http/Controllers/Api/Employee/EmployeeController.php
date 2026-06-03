@@ -282,7 +282,15 @@ class EmployeeController extends Controller
             throw new \Illuminate\Validation\ValidationException($validator);
         }
 
+        $oldEmail = $employee->email;
         $employee->update($request->all());
+
+        // If email was changed, sync it to the associated user login record
+        if ($request->has('email') && $employee->email !== $oldEmail && $employee->user) {
+            $employee->user->update([
+                'email' => $employee->email
+            ]);
+        }
 
         return response()->json([
             'message' => 'Employee updated successfully.',

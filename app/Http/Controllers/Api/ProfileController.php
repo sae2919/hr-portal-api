@@ -9,12 +9,33 @@ class ProfileController extends Controller
     public function update(Request $request)
     {
         $user = auth()->user();
-        $request->validate([
+        $isAdminOrHR = $user->hasRole('admin') || $user->hasRole('hr') || $user->hasRole('super_admin');
+
+        $rules = [
             'name'  => ['required', 'string', 'max:100'],
-            'email' => ['required', 'email', "unique:users,email,{$user->id}"],
             'phone' => ['nullable', 'string', 'max:20'],
-        ]);
-        $user->update($request->only('name', 'email', 'phone'));
+        ];
+
+        if ($isAdminOrHR) {
+            $rules['email'] = ['required', 'email', "unique:users,email,{$user->id}"];
+        }
+
+        $request->validate($rules);
+
+        $updateData = $request->only('name', 'phone');
+        if ($isAdminOrHR && $request->has('email')) {
+            $updateData['email'] = $request->email;
+        }
+
+        $user->update($updateData);
+
+        // Sync with employee if email is changed and they have a linked employee
+        if ($isAdminOrHR && $request->has('email') && $user->employee) {
+            $user->employee->update([
+                'email' => $user->email
+            ]);
+        }
+
         return response()->json(['data' => $user->fresh()]);
     }
 

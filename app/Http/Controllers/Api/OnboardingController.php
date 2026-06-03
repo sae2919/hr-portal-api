@@ -123,6 +123,19 @@ class OnboardingController extends Controller
             
             DB::commit();
             
+            // Trigger welcome onboarding mail to candidate
+            \App\Services\MailService::sendTemplateMail(
+                $onboardingRequest->email,
+                'candidate_onboarding_welcome',
+                [
+                    'name' => $onboardingRequest->candidate_name,
+                    'employee_name' => $onboardingRequest->candidate_name,
+                    'position' => $onboardingRequest->position,
+                    'department' => $onboardingRequest->department,
+                    'joining_date' => $onboardingRequest->joining_date,
+                ]
+            );
+
             return response()->json([
                 'success' => true,
                 'message' => 'Onboarding request created successfully',
@@ -196,6 +209,19 @@ class OnboardingController extends Controller
             'approved_at' => now(),
         ]);
         
+        // Trigger approval mail to candidate
+        \App\Services\MailService::sendTemplateMail(
+            $onboardingRequest->email,
+            'candidate_onboarding_approved',
+            [
+                'name' => $onboardingRequest->candidate_name,
+                'employee_name' => $onboardingRequest->candidate_name,
+                'position' => $onboardingRequest->position,
+                'department' => $onboardingRequest->department,
+                'joining_date' => $onboardingRequest->joining_date,
+            ]
+        );
+
         return response()->json([
             'success' => true,
             'message' => 'Onboarding request approved successfully',
@@ -224,6 +250,20 @@ class OnboardingController extends Controller
             'rejection_reason' => $request->rejection_reason,
         ]);
         
+        // Trigger rejection mail to candidate
+        \App\Services\MailService::sendTemplateMail(
+            $onboardingRequest->email,
+            'candidate_onboarding_rejected',
+            [
+                'name' => $onboardingRequest->candidate_name,
+                'employee_name' => $onboardingRequest->candidate_name,
+                'position' => $onboardingRequest->position,
+                'department' => $onboardingRequest->department,
+                'joining_date' => $onboardingRequest->joining_date,
+                'rejection_reason' => $onboardingRequest->rejection_reason,
+            ]
+        );
+
         return response()->json([
             'success' => true,
             'message' => 'Onboarding request rejected',

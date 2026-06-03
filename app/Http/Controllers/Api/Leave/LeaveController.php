@@ -217,6 +217,22 @@ class LeaveController extends Controller
                 ? 'Comp Off application submitted on behalf of employee. Awaiting team lead review.' 
                 : 'Leave application submitted. Awaiting team lead review.');
 
+        // Trigger template mail to employee's manager
+        if ($leave->employee->manager && $leave->employee->manager->email) {
+            \App\Services\MailService::sendTemplateMail(
+                $leave->employee->manager->email,
+                'leave_request_submitted',
+                [
+                    'name' => $leave->employee->manager->full_name,
+                    'employee_name' => $leave->employee->full_name,
+                    'leave_type' => $leave->leaveType->name,
+                    'leave_dates' => $leave->start_date . ' to ' . $leave->end_date,
+                    'reason' => $leave->reason,
+                    'days' => $leave->days,
+                ]
+            );
+        }
+
         return response()->json([
             'message' => $message,
             'data'    => new LeaveResource($leave->load(['employee.department', 'leaveType', 'teamLead'])),
@@ -274,6 +290,19 @@ class LeaveController extends Controller
                     $balance->increment('remaining_days', $leave->days);
                 }
             });
+
+            // Trigger template mail to employee for approved Comp Off
+            \App\Services\MailService::sendTemplateMail(
+                $leave->employee->email,
+                'leave_request_approved',
+                [
+                    'name' => $leave->employee->full_name,
+                    'employee_name' => $leave->employee->full_name,
+                    'leave_type' => $leave->leaveType->name,
+                    'leave_dates' => $leave->start_date . ' to ' . $leave->end_date,
+                    'days' => $leave->days,
+                ]
+            );
 
             return response()->json([
                 'message' => 'Team lead approved. Since this Comp Off was applied by Admin/HR, it has been automatically finalized and approved.',
@@ -346,6 +375,20 @@ class LeaveController extends Controller
             }
         });
 
+        // Trigger template mail to employee for Team Lead rejection
+        \App\Services\MailService::sendTemplateMail(
+            $leave->employee->email,
+            'leave_request_rejected',
+            [
+                'name' => $leave->employee->full_name,
+                'employee_name' => $leave->employee->full_name,
+                'leave_type' => $leave->leaveType->name,
+                'leave_dates' => $leave->start_date . ' to ' . $leave->end_date,
+                'rejection_reason' => $leave->team_lead_rejection_reason ?? $leave->rejection_reason ?? 'Rejected by Team Lead',
+                'days' => $leave->days,
+            ]
+        );
+
         return response()->json([
             'message' => 'Leave rejected by team lead.',
             'data'    => new LeaveResource($leave->load(['employee', 'leaveType', 'teamLead'])),
@@ -415,6 +458,19 @@ class LeaveController extends Controller
             ? 'Leave approved by HR (team lead rejection overridden).'
             : 'Leave approved successfully.';
 
+        // Trigger template mail to employee for final approval
+        \App\Services\MailService::sendTemplateMail(
+            $leave->employee->email,
+            'leave_request_approved',
+            [
+                'name' => $leave->employee->full_name,
+                'employee_name' => $leave->employee->full_name,
+                'leave_type' => $leave->leaveType->name,
+                'leave_dates' => $leave->start_date . ' to ' . $leave->end_date,
+                'days' => $leave->days,
+            ]
+        );
+
         return response()->json([
             'message' => $message,
             'data'    => new LeaveResource($leave->load(['employee', 'leaveType', 'teamLead'])),
@@ -459,6 +515,20 @@ class LeaveController extends Controller
                             ->increment('remaining_days', $leave->days);
             }
         });
+
+        // Trigger template mail to employee for final rejection
+        \App\Services\MailService::sendTemplateMail(
+            $leave->employee->email,
+            'leave_request_rejected',
+            [
+                'name' => $leave->employee->full_name,
+                'employee_name' => $leave->employee->full_name,
+                'leave_type' => $leave->leaveType->name,
+                'leave_dates' => $leave->start_date . ' to ' . $leave->end_date,
+                'rejection_reason' => $leave->rejection_reason ?? 'Rejected by HR/Admin',
+                'days' => $leave->days,
+            ]
+        );
 
         return response()->json([
             'message' => 'Leave rejected.',

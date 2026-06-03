@@ -239,7 +239,30 @@ class PayrollController extends Controller
                     continue;
                 }
 
-                Mail::to($employeeEmail)->send(new EmployeePayslipMail($payroll));
+                $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('pdf.payslip', [
+                    'payroll'  => $payroll,
+                    'employee' => $payroll->employee,
+                ]);
+                $monthName = date("F", mktime(0, 0, 0, $payroll->month, 10));
+
+                \App\Services\MailService::sendTemplateMail(
+                    $employeeEmail,
+                    'employee_payslip_delivery',
+                    [
+                        'name' => $payroll->employee->full_name,
+                        'employee_name' => $payroll->employee->full_name,
+                        'month' => $monthName,
+                        'year' => $payroll->year,
+                        'net_salary' => $payroll->net_salary,
+                    ],
+                    [
+                        [
+                            'data' => $pdf->output(),
+                            'name' => "Payslip-{$monthName}-{$payroll->year}.pdf",
+                            'mime' => 'application/pdf',
+                        ]
+                    ]
+                );
                 $sent++;
             } catch (\Exception $e) {
                 Log::error("Bulk email failed for payroll {$id}: " . $e->getMessage());
@@ -471,7 +494,30 @@ class PayrollController extends Controller
         }
 
         try {
-            Mail::to($employeeEmail)->send(new EmployeePayslipMail($payroll));
+            $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('pdf.payslip', [
+                'payroll'  => $payroll,
+                'employee' => $payroll->employee,
+            ]);
+            $monthName = date("F", mktime(0, 0, 0, $payroll->month, 10));
+
+            \App\Services\MailService::sendTemplateMail(
+                $employeeEmail,
+                'employee_payslip_delivery',
+                [
+                    'name' => $payroll->employee->full_name,
+                    'employee_name' => $payroll->employee->full_name,
+                    'month' => $monthName,
+                    'year' => $payroll->year,
+                    'net_salary' => $payroll->net_salary,
+                ],
+                [
+                    [
+                        'data' => $pdf->output(),
+                        'name' => "Payslip-{$monthName}-{$payroll->year}.pdf",
+                        'mime' => 'application/pdf',
+                    ]
+                ]
+            );
             return response()->json(['message' => "Payslip emailed to {$employeeEmail}."]);
         } catch (\Exception $e) {
             Log::error('Payslip mail failed: ' . $e->getMessage());

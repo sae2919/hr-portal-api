@@ -59,8 +59,28 @@ class OfferLetterController extends Controller
             'sent_at' => now(),
         ]);
         
-        // Send email logic here
-        // Mail::to($offerLetter->onboardingRequest->email)->send(new OfferLetterMail($offerLetter));
+        $absolutePath = storage_path("app/public/{$offerLetter->file_path}");
+        
+        if (file_exists($absolutePath)) {
+            \App\Services\MailService::sendTemplateMail(
+                $offerLetter->onboardingRequest->email,
+                'candidate_offer_letter_delivery',
+                [
+                    'name' => $offerLetter->onboardingRequest->candidate_name,
+                    'employee_name' => $offerLetter->onboardingRequest->candidate_name,
+                    'position' => $offerLetter->onboardingRequest->position,
+                    'department' => $offerLetter->onboardingRequest->department,
+                    'joining_date' => $offerLetter->onboardingRequest->joining_date,
+                ],
+                [
+                    [
+                        'path' => $absolutePath,
+                        'name' => "Offer_Letter_{$offerLetter->onboardingRequest->candidate_name}.pdf",
+                        'mime' => 'application/pdf',
+                    ]
+                ]
+            );
+        }
         
         return response()->json([
             'success' => true,

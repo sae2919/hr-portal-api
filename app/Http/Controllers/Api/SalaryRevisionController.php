@@ -159,6 +159,41 @@ class SalaryRevisionController extends Controller
             ]);
         });
 
+        $revision->load(['employee.department', 'employee.designation', 'approver']);
+        $employee = $revision->employee;
+
+        // Render blade view to PDF
+        $pdf = \PDF::loadView('pdf.salary_revision', [
+            'revision' => $revision,
+            'employee' => $employee,
+            'company_name' => \App\Models\CompanySetting::getValue('company_name') ?? 'HR Portal',
+            'company_logo' => \App\Models\CompanySetting::getValue('company_logo') ?? null,
+        ]);
+
+        $dateStr = Carbon::parse($revision->effective_date)->format('Y-m-d');
+        $filename = "salary-revision-{$employee->employee_code}-{$dateStr}.pdf";
+
+        // Trigger template mail to employee regarding salary revision
+        \App\Services\MailService::sendTemplateMail(
+            $employee->email,
+            'salary_revision_notice',
+            [
+                'name' => $employee->full_name,
+                'employee_name' => $employee->full_name,
+                'old_gross' => $revision->old_gross_salary,
+                'new_gross' => $revision->new_gross_salary,
+                'increment_percentage' => $revision->increment_percentage,
+                'effective_date' => $revision->effective_date,
+            ],
+            [
+                [
+                    'data' => $pdf->output(),
+                    'name' => $filename,
+                    'mime' => 'application/pdf',
+                ]
+            ]
+        );
+
         return response()->json([
             'message' => 'Salary revision created successfully and new salary structure activated.',
             'data'    => $revision->load(['employee', 'approver']),

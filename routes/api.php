@@ -29,6 +29,7 @@ use App\Http\Controllers\Api\DocumentController;
 use App\Http\Controllers\Api\AssetController;
 use App\Http\Controllers\Api\OfferLetterController;
 use App\Http\Controllers\Api\ProfileController;
+use App\Http\Controllers\Api\MailTemplateController;
 
 // ============================================
 // HEALTH CHECK ROUTE (NO AUTH REQUIRED)
@@ -91,6 +92,7 @@ Route::prefix('v1')->group(function () {
         // ──────────────────────────────────────
         Route::apiResource('departments', DepartmentController::class);
         Route::apiResource('designations', DesignationController::class);
+        Route::apiResource('mail-templates', MailTemplateController::class);
 
         // ──────────────────────────────────────
         // EMPLOYEES
@@ -235,6 +237,7 @@ Route::prefix('v1')->group(function () {
             Route::post('/{id}/approve',    [OffboardingController::class, 'approve']);
             Route::post('/{id}/reject',     [OffboardingController::class, 'reject']);
             Route::post('/{id}/complete',   [OffboardingController::class, 'complete']);
+            Route::get('/{id}/download',    [OffboardingController::class, 'download']);
             Route::patch('/{id}/tasks',     [OffboardingController::class, 'updateTasks']);
         });
 

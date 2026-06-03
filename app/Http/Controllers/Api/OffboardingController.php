@@ -249,9 +249,47 @@ class OffboardingController extends Controller
 
             DB::commit();
 
+            // Load relations to make sure PDF views and email placeholders have all info
+            $offboarding->load(['employee.department', 'employee.designation', 'approver']);
+            $employee = $offboarding->employee;
+
+            try {
+                // Generate clearance letter PDF using DomPDF
+                $pdf = \PDF::loadView('pdf.exit_clearance', [
+                    'offboarding' => $offboarding,
+                    'employee' => $employee,
+                    'company_name' => \App\Models\CompanySetting::getValue('company_name') ?? 'Techsprout AI Labs Pvt. Ltd',
+                    'company_logo' => \App\Models\CompanySetting::getValue('company_logo') ?? null,
+                ]);
+
+                $filename = "Relieving_Letter_" . str_replace(' ', '_', $employee->full_name) . ".pdf";
+
+                // Trigger offboarding completed template email
+                \App\Services\MailService::sendTemplateMail(
+                    $employee->email,
+                    'employee_offboarding_complete',
+                    [
+                        'name' => $employee->full_name,
+                        'employee_name' => $employee->full_name,
+                        'employee_code' => $employee->employee_code,
+                        'resignation_date' => $offboarding->resignation_date ? $offboarding->resignation_date->format('d-M-Y') : '',
+                        'last_working_day' => $offboarding->last_working_day ? $offboarding->last_working_day->format('d-M-Y') : '',
+                    ],
+                    [
+                        [
+                            'data' => $pdf->output(),
+                            'name' => $filename,
+                            'mime' => 'application/pdf',
+                        ]
+                    ]
+                );
+            } catch (\Exception $mailEx) {
+                \Illuminate\Support\Facades\Log::error('Exit clearance PDF mail trigger failed: ' . $mailEx->getMessage());
+            }
+
             return response()->json([
                 'success' => true,
-                'message' => 'Offboarding completed successfully. Employee record is now terminated/inactive.',
+                'message' => 'Offboarding completed successfully. Employee record is now terminated/inactive and Relieving Letter emailed.',
                 'data' => $offboarding->load('employee')
             ]);
 
@@ -262,6 +300,39 @@ class OffboardingController extends Controller
                 'message' => 'Failed to complete offboarding: ' . $e->getMessage()
             ], 500);
         }
+    }
+
+    /**
+     * Download exit clearance PDF
+     */
+    public function download($id)
+    {
+        $user = auth()->user();
+        $offboarding = OffboardingRequest::with(['employee.department', 'employee.designation', 'approver'])->findOrFail($id);
+
+        if (!$this->isAdminOrHR()) {
+            $employeeId = $user->employee->id ?? null;
+            if ($offboarding->employee_id !== $employeeId) {
+                abort(403, 'Unauthorized.');
+            }
+        }
+
+        if ($offboarding->status !== 'completed' && $offboarding->status !== 'approved') {
+            abort(400, 'Relieving letter is only available after approval or completion.');
+        }
+
+        $employee = $offboarding->employee;
+
+        $pdf = \PDF::loadView('pdf.exit_clearance', [
+            'offboarding' => $offboarding,
+            'employee' => $employee,
+            'company_name' => \App\Models\CompanySetting::getValue('company_name') ?? 'Techsprout AI Labs Pvt. Ltd',
+            'company_logo' => \App\Models\CompanySetting::getValue('company_logo') ?? null,
+        ]);
+
+        $filename = "Relieving_Letter_" . str_replace(' ', '_', $employee->full_name) . ".pdf";
+
+        return $pdf->stream($filename);
     }
 
     /**

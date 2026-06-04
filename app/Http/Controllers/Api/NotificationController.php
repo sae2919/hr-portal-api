@@ -203,8 +203,8 @@ class NotificationController extends Controller
         if (in_array($role, ['super admin','admin', 'hr'])) {
             // Admin/HR: unpaid payrolls this month
             $unpaidCount = Payroll::where('status', 'pending')
-                ->whereMonth('payroll_month', $now->month)
-                ->whereYear('payroll_month',  $now->year)
+                ->where('month', $now->month)
+                ->where('year',  $now->year)
                 ->count();
 
             if ($unpaidCount > 0) {
@@ -233,7 +233,7 @@ class NotificationController extends Controller
                     'id'      => 'payroll_paid_' . $latestPayroll->id,
                     'type'    => 'payroll',
                     'title'   => 'Salary Processed',
-                    'message' => 'Your salary for ' . Carbon::parse($latestPayroll->payroll_month)->format('F Y') . ' has been processed',
+                    'message' => 'Your salary for ' . Carbon::create($latestPayroll->year, $latestPayroll->month, 1)->format('F Y') . ' has been processed',
                     'time'    => $latestPayroll->updated_at->diffForHumans(),
                     'read'    => false,
                     'icon'    => 'rupee',

@@ -173,10 +173,10 @@ class SalaryRevisionController extends Controller
         $dateStr = Carbon::parse($revision->effective_date)->format('Y-m-d');
         $filename = "salary-revision-{$employee->employee_code}-{$dateStr}.pdf";
 
-        // Trigger template mail to employee regarding salary revision
-        \App\Services\MailService::sendTemplateMail(
-            $employee->email,
+        // Trigger template mail to employee regarding salary revision via background queue
+        \App\Jobs\SendReusableMail::dispatch(
             'salary_revision_notice',
+            $employee->email,
             [
                 'name' => $employee->full_name,
                 'employee_name' => $employee->full_name,
@@ -185,11 +185,13 @@ class SalaryRevisionController extends Controller
                 'increment_percentage' => $revision->increment_percentage,
                 'effective_date' => $revision->effective_date,
             ],
+            null,
             [
                 [
-                    'data' => $pdf->output(),
+                    'data' => base64_encode($pdf->output()),
                     'name' => $filename,
                     'mime' => 'application/pdf',
+                    'base64' => true,
                 ]
             ]
         );

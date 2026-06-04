@@ -114,10 +114,10 @@ class GenerateMonthlyPayroll extends Command
         $endOfMonth   = Carbon::create($year, $month, 1)->endOfMonth();
         $periodEnd    = $endOfMonth->lt(Carbon::today()) ? $endOfMonth : Carbon::today();
 
-        // ── 3. Working days (Mon–Sat) ─────────────────────────────
+        // ── 3. Working days (Mon–Sat + custom Sat weekoffs) ───────
         $workingDays = 0;
         for ($d = $startOfMonth->copy(); $d->lte($periodEnd); $d->addDay()) {
-            if (!$d->isSunday()) $workingDays++;
+            if (!\App\Models\Leave::isWeekOff($d)) $workingDays++;
         }
 
         // ── 4. Attendance ─────────────────────────────────────────
@@ -148,7 +148,7 @@ class GenerateMonthlyPayroll extends Command
 
             $leaveDays = 0;
             for ($d = $leaveStart->copy(); $d->lte($leaveEnd); $d->addDay()) {
-                if (!$d->isSunday()) $leaveDays++;
+                if (!\App\Models\Leave::isWeekOff($d)) $leaveDays++;
             }
             if ($leaveDays === 0) continue;
 

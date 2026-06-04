@@ -17,7 +17,7 @@ class MailService
      * @param array $variables
      * @return bool
      */
-    public static function sendTemplateMail(string $toEmail, string $templateName, array $variables = [], array $attachments = []): bool
+    public static function sendTemplateMailSync(string $toEmail, string $templateName, array $variables = [], array $attachments = [], ?string $subjectOverride = null): bool
     {
         try {
             $template = MailTemplate::where('template_name', $templateName)
@@ -30,7 +30,7 @@ class MailService
             }
 
             // Perform bracket replacements in Subject and Body
-            $compiledSubject = $template->subject ?? '';
+            $compiledSubject = $subjectOverride ?? $template->subject ?? '';
             $compiledBody = $template->body ?? '';
 
             // Add standard global variables if not already present
@@ -78,11 +78,11 @@ class MailService
                         overflow: hidden;
                     }
                     .global-header {
-                        background-color: #0f172a;
+                        background: linear-gradient(135deg, #1e40af, #3b82f6);
                         padding: 24px;
                         text-align: center;
                         color: #ffffff;
-                        border-bottom: 1px solid #e2e8f0;
+                        border-bottom: 1px solid #1e3a8a;
                     }
                     .global-header h1 {
                         margin: 0;

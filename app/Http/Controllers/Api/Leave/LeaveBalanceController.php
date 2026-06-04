@@ -54,23 +54,39 @@ class LeaveBalanceController extends Controller
         )->get();
 
         foreach ($emps as $emp) {
-
             foreach ($types as $type) {
+                // Check if balance already exists
+                $exists = LeaveBalance::where('employee_id', $emp->id)
+                    ->where('leave_type_id', $type->id)
+                    ->where('year', $year)
+                    ->exists();
 
-                LeaveBalance::firstOrCreate(
+                if ($exists) {
+                    continue;
+                }
 
-                    [
-                        'employee_id'   => $emp->id,
-                        'leave_type_id' => $type->id,
-                        'year'          => $year
-                    ],
+                $carryForwardDays = 0.0;
+                if ($type->carry_forward) {
+                    $prevYear = $year - 1;
+                    $prevBalance = LeaveBalance::where('employee_id', $emp->id)
+                        ->where('leave_type_id', $type->id)
+                        ->where('year', $prevYear)
+                        ->first();
+                    if ($prevBalance) {
+                        $carryForwardDays = (float) $prevBalance->remaining_days;
+                    }
+                }
 
-                    [
-                        'total_days'     => $type->days_per_year,
-                        'used_days'      => 0,
-                        'remaining_days' => $type->days_per_year,
-                    ]
-                );
+                $totalDays = (float) $type->days_per_year + $carryForwardDays;
+
+                LeaveBalance::create([
+                    'employee_id'    => $emp->id,
+                    'leave_type_id'  => $type->id,
+                    'year'           => $year,
+                    'total_days'     => $totalDays,
+                    'used_days'      => 0,
+                    'remaining_days' => $totalDays,
+                ]);
             }
         }
 

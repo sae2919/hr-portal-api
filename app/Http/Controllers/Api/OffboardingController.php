@@ -264,10 +264,10 @@ class OffboardingController extends Controller
 
                 $filename = "Relieving_Letter_" . str_replace(' ', '_', $employee->full_name) . ".pdf";
 
-                // Trigger offboarding completed template email
-                \App\Services\MailService::sendTemplateMail(
-                    $employee->email,
+                // Trigger offboarding completed template email via background queue
+                \App\Jobs\SendReusableMail::dispatch(
                     'employee_offboarding_complete',
+                    $employee->email,
                     [
                         'name' => $employee->full_name,
                         'employee_name' => $employee->full_name,
@@ -275,11 +275,13 @@ class OffboardingController extends Controller
                         'resignation_date' => $offboarding->resignation_date ? $offboarding->resignation_date->format('d-M-Y') : '',
                         'last_working_day' => $offboarding->last_working_day ? $offboarding->last_working_day->format('d-M-Y') : '',
                     ],
+                    null,
                     [
                         [
-                            'data' => $pdf->output(),
+                            'data' => base64_encode($pdf->output()),
                             'name' => $filename,
                             'mime' => 'application/pdf',
+                            'base64' => true,
                         ]
                     ]
                 );

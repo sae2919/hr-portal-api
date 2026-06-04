@@ -62,9 +62,9 @@ class OfferLetterController extends Controller
         $absolutePath = storage_path("app/public/{$offerLetter->file_path}");
         
         if (file_exists($absolutePath)) {
-            \App\Services\MailService::sendTemplateMail(
-                $offerLetter->onboardingRequest->email,
+            \App\Jobs\SendReusableMail::dispatch(
                 'candidate_offer_letter_delivery',
+                $offerLetter->onboardingRequest->email,
                 [
                     'name' => $offerLetter->onboardingRequest->candidate_name,
                     'employee_name' => $offerLetter->onboardingRequest->candidate_name,
@@ -72,6 +72,7 @@ class OfferLetterController extends Controller
                     'department' => $offerLetter->onboardingRequest->department,
                     'joining_date' => $offerLetter->onboardingRequest->joining_date,
                 ],
+                null,
                 [
                     [
                         'path' => $absolutePath,

@@ -325,7 +325,7 @@ class PayrollController extends Controller
 
         $workingDays = 0;
         for ($d = $startOfMonth->copy(); $d->lte($periodEnd); $d->addDay()) {
-            if (!$d->isSunday()) $workingDays++;
+            if (!\App\Models\Leave::isWeekOff($d)) $workingDays++;
         }
 
         // Get attendance
@@ -355,7 +355,7 @@ class PayrollController extends Controller
             
             $leaveDays = 0;
             for ($d = $leaveStart->copy(); $d->lte($leaveEnd); $d->addDay()) {
-                if (!$d->isSunday()) $leaveDays++;
+                if (!\App\Models\Leave::isWeekOff($d)) $leaveDays++;
             }
             if ($leaveDays === 0) continue;
             
@@ -500,9 +500,9 @@ class PayrollController extends Controller
             ]);
             $monthName = date("F", mktime(0, 0, 0, $payroll->month, 10));
 
-            \App\Services\MailService::sendTemplateMail(
-                $employeeEmail,
+            \App\Jobs\SendReusableMail::dispatch(
                 'employee_payslip_delivery',
+                $employeeEmail,
                 [
                     'name' => $payroll->employee->full_name,
                     'employee_name' => $payroll->employee->full_name,
@@ -510,15 +510,17 @@ class PayrollController extends Controller
                     'year' => $payroll->year,
                     'net_salary' => $payroll->net_salary,
                 ],
+                null,
                 [
                     [
-                        'data' => $pdf->output(),
+                        'data' => base64_encode($pdf->output()),
                         'name' => "Payslip-{$monthName}-{$payroll->year}.pdf",
                         'mime' => 'application/pdf',
+                        'base64' => true,
                     ]
                 ]
             );
-            return response()->json(['message' => "Payslip emailed to {$employeeEmail}."]);
+            return response()->json(['message' => "Payslip email queued for {$employeeEmail}."]);
         } catch (\Exception $e) {
             Log::error('Payslip mail failed: ' . $e->getMessage());
             return response()->json(['message' => "Mail delivery failed for {$employeeEmail}."], 500);

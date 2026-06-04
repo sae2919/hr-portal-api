@@ -49,6 +49,18 @@ class Leave extends Model
         return $this->belongsTo(User::class, 'team_lead_id');
     }
 
+    public static function isWeekOff(Carbon $date): bool
+    {
+        if ($date->isSunday()) {
+            return true;
+        }
+        if ($date->isSaturday()) {
+            $weekOfMonth = (int) ceil($date->day / 7);
+            return $weekOfMonth === 2 || $weekOfMonth === 4;
+        }
+        return false;
+    }
+
     public static function calculateDays(string $start, string $end): float
     {
         $startDate = Carbon::parse($start);
@@ -56,7 +68,9 @@ class Leave extends Model
         $days      = 0;
 
         while ($startDate->lte($endDate)) {
-            if ($startDate->isWeekday()) $days++;
+            if (!self::isWeekOff($startDate)) {
+                $days++;
+            }
             $startDate->addDay();
         }
 

@@ -124,9 +124,9 @@ class OnboardingController extends Controller
             DB::commit();
             
             // Trigger welcome onboarding mail to candidate
-            \App\Services\MailService::sendTemplateMail(
-                $onboardingRequest->email,
+            \App\Jobs\SendReusableMail::dispatch(
                 'candidate_onboarding_welcome',
+                $onboardingRequest->email,
                 [
                     'name' => $onboardingRequest->candidate_name,
                     'employee_name' => $onboardingRequest->candidate_name,
@@ -210,9 +210,9 @@ class OnboardingController extends Controller
         ]);
         
         // Trigger approval mail to candidate
-        \App\Services\MailService::sendTemplateMail(
-            $onboardingRequest->email,
+        \App\Jobs\SendReusableMail::dispatch(
             'candidate_onboarding_approved',
+            $onboardingRequest->email,
             [
                 'name' => $onboardingRequest->candidate_name,
                 'employee_name' => $onboardingRequest->candidate_name,
@@ -251,9 +251,9 @@ class OnboardingController extends Controller
         ]);
         
         // Trigger rejection mail to candidate
-        \App\Services\MailService::sendTemplateMail(
-            $onboardingRequest->email,
+        \App\Jobs\SendReusableMail::dispatch(
             'candidate_onboarding_rejected',
+            $onboardingRequest->email,
             [
                 'name' => $onboardingRequest->candidate_name,
                 'employee_name' => $onboardingRequest->candidate_name,

@@ -219,9 +219,9 @@ class LeaveController extends Controller
 
         // Trigger template mail to employee's manager
         if ($leave->employee->manager && $leave->employee->manager->email) {
-            \App\Services\MailService::sendTemplateMail(
-                $leave->employee->manager->email,
+            \App\Jobs\SendReusableMail::dispatch(
                 'leave_request_submitted',
+                $leave->employee->manager->email,
                 [
                     'name' => $leave->employee->manager->full_name,
                     'employee_name' => $leave->employee->full_name,
@@ -292,9 +292,9 @@ class LeaveController extends Controller
             });
 
             // Trigger template mail to employee for approved Comp Off
-            \App\Services\MailService::sendTemplateMail(
-                $leave->employee->email,
+            \App\Jobs\SendReusableMail::dispatch(
                 'leave_request_approved',
+                $leave->employee->email,
                 [
                     'name' => $leave->employee->full_name,
                     'employee_name' => $leave->employee->full_name,
@@ -376,9 +376,9 @@ class LeaveController extends Controller
         });
 
         // Trigger template mail to employee for Team Lead rejection
-        \App\Services\MailService::sendTemplateMail(
-            $leave->employee->email,
+        \App\Jobs\SendReusableMail::dispatch(
             'leave_request_rejected',
+            $leave->employee->email,
             [
                 'name' => $leave->employee->full_name,
                 'employee_name' => $leave->employee->full_name,
@@ -459,9 +459,9 @@ class LeaveController extends Controller
             : 'Leave approved successfully.';
 
         // Trigger template mail to employee for final approval
-        \App\Services\MailService::sendTemplateMail(
-            $leave->employee->email,
+        \App\Jobs\SendReusableMail::dispatch(
             'leave_request_approved',
+            $leave->employee->email,
             [
                 'name' => $leave->employee->full_name,
                 'employee_name' => $leave->employee->full_name,
@@ -517,9 +517,9 @@ class LeaveController extends Controller
         });
 
         // Trigger template mail to employee for final rejection
-        \App\Services\MailService::sendTemplateMail(
-            $leave->employee->email,
+        \App\Jobs\SendReusableMail::dispatch(
             'leave_request_rejected',
+            $leave->employee->email,
             [
                 'name' => $leave->employee->full_name,
                 'employee_name' => $leave->employee->full_name,

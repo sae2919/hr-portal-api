@@ -130,13 +130,6 @@ Route::prefix('v1')->group(function () {
         Route::get('/payrolls/{payroll}/items',       [PayrollController::class, 'items']);
         Route::post('/payrolls/{payroll}/mark-paid',  [PayrollController::class, 'markPaid']);
         Route::post('/payrolls/{payroll}/send-email', [PayrollController::class, 'sendEmail']);
-        Route::post('/payrolls/{payroll}/request-payslip', [PayrollController::class, 'requestPayslip']);
-
-        // ──────────────────────────────────────
-        // PAYROLL REQUESTS
-        // ──────────────────────────────────────
-        Route::get('/payroll-requests',                    [PayrollController::class, 'indexRequests']);
-        Route::patch('/payroll-requests/{id}/fulfill',     [PayrollController::class, 'fulfillRequest']);
 
         // ──────────────────────────────────────
         // SALARY REVISIONS

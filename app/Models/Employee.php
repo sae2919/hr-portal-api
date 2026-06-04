@@ -62,6 +62,7 @@ class Employee extends Model
         'passport_number',
         'voter_id',
         'uan_number',
+        'previous_designation_id',
     ];
 
     protected $casts = [
@@ -83,12 +84,67 @@ class Employee extends Model
             }
         });
 
+        static::updating(function ($employee) {
+            if ($employee->isDirty('designation_id')) {
+                $employee->previous_designation_id = $employee->getOriginal('designation_id');
+            }
+        });
+
+        static::saved(function ($employee) {
+            // Whenever an employee is saved (created or updated), we ensure they have an active SalaryStructure matching their current employee salary fields
+            
+            // 1. Calculate total allowances
+            $allowancesData = $employee->allowances;
+            $totalAllowances = is_array($allowancesData) 
+                ? collect($allowancesData)->sum('amount') 
+                : (is_numeric($allowancesData) ? (float) $allowancesData : 0);
+
+            $gross = ($employee->basic_salary ?? 0)
+                   + ($employee->hra ?? 0)
+                   + $totalAllowances
+                   + ($employee->bonus ?? 0);
+
+            $deductions = ($employee->pf_deduction ?? 0)
+                        + ($employee->tds_amount ?? 0)
+                        + ($employee->esi_employee ?? 0)
+                        + ($employee->pt_amount ?? 0)
+                        + ($employee->other_deductions ?? 0);
+
+            $net = $gross - $deductions;
+
+            // 2. Deactivate any existing salary structures for this employee
+            \App\Models\SalaryStructure::where('employee_id', $employee->id)
+                ->where('status', 'active')
+                ->update(['status' => 'inactive']);
+
+            // 3. Create the new active one
+            $salary = \App\Models\SalaryStructure::create([
+                'employee_id'      => $employee->id,
+                'basic_salary'     => $employee->basic_salary ?? 0,
+                'hra'              => $employee->hra ?? 0,
+                'allowances'       => $totalAllowances, // Store the decimal sum in the decimal column
+                'bonus'            => $employee->bonus ?? 0,
+                'pf_deduction'     => $employee->pf_deduction ?? 0,
+                'tax_deduction'    => $employee->tds_amount ?? 0,
+                'other_deductions' => $employee->other_deductions ?? 0,
+                'gross_salary'     => $gross,
+                'net_salary'       => $net,
+                'effective_from'   => now(),
+                'status'           => 'active',
+            ]);
+
+            // Save the active salary structure ID as a temporary property for static::created to access
+            $employee->_active_salary_structure = $salary;
+        });
+
         static::created(function ($employee) {
+            // Create initial payroll record if _salary_data was provided (i.e. created from form)
             if (!$employee->_salary_data) return;
 
-            $d = $employee->_salary_data;
+            $salary = $employee->_active_salary_structure;
+            if (!$salary) return;
 
-            // Calculate total allowances from JSON array
+            $d = $employee->_salary_data;
             $totalAllowances = is_array($d['allowances']) 
                 ? collect($d['allowances'])->sum('amount') 
                 : ($d['allowances'] ?? 0);
@@ -105,20 +161,6 @@ class Employee extends Model
                         + ($d['other_deductions'] ?? 0);
 
             $net = $gross - $deductions;
-
-            $salary = SalaryStructure::create([
-                'employee_id'      => $employee->id,
-                'basic_salary'     => $d['basic_salary'] ?? 0,
-                'hra'              => $d['hra'] ?? 0,
-                'allowances'       => $d['allowances'] ?? [],  // ✅ Store JSON
-                'bonus'            => $d['bonus'] ?? 0,
-                'pf_deduction'     => $d['pf_deduction'] ?? 0,
-                'tax_deduction'    => $d['tds_amount'] ?? 0,
-                'other_deductions' => $d['other_deductions'] ?? 0,
-                'gross_salary'     => $gross,
-                'net_salary'       => $net,
-                'effective_from'   => now(),
-            ]);
 
             Payroll::create([
                 'employee_id'         => $employee->id,
@@ -147,11 +189,13 @@ class Employee extends Model
     // ── Relationships ─────────────────────────────────────────────
     public function department() { return $this->belongsTo(Department::class); }
     public function designation() { return $this->belongsTo(Designation::class); }
+    public function previousDesignation() { return $this->belongsTo(Designation::class, 'previous_designation_id'); }
     public function user() { return $this->hasOne(User::class); }
     public function manager() { return $this->belongsTo(Employee::class, 'reporting_to'); }
     public function subordinates() { return $this->hasMany(Employee::class, 'reporting_to'); }
     public function salaryStructure() { return $this->hasOne(SalaryStructure::class)->latestOfMany(); }
     public function payrolls() { return $this->hasMany(Payroll::class); }
+    public function leaves() { return $this->hasMany(Leave::class); }
 
     // ── Accessors ─────────────────────────────────────────────────
     public function getFullNameAttribute(): string

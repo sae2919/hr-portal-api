@@ -9,7 +9,12 @@ class EmployeeResource extends JsonResource
 {
     public function toArray(Request $request): array
     {
-        return [
+        $user = auth()->user();
+        $isAdminOrHR = $user && ($user->hasRole('super_admin') || $user->hasRole('admin') || $user->hasRole('hr'));
+        $isOwnProfile = $user && ($user->employee_id === $this->id || ($user->employee && $user->employee->id === $this->id));
+        $showSensitive = $isAdminOrHR || $isOwnProfile;
+
+        $res = [
             'id'              => $this->id,
             'employee_code'   => $this->employee_code,
             'first_name'      => $this->first_name,
@@ -52,34 +57,42 @@ class EmployeeResource extends JsonResource
             'emergency_contact_name'     => $this->emergency_contact_name,
             'emergency_contact_phone'    => $this->emergency_contact_phone,
             'emergency_contact_relation' => $this->emergency_contact_relation,
-            // Bank details
-            'bank_name'           => $this->bank_name,
-            'bank_account_number' => $this->bank_account_number,
-            'bank_ifsc'           => $this->bank_ifsc,
-            'bank_branch'         => $this->bank_branch,
-            // Salary
-            'basic_salary'     => $this->basic_salary ?? 0,
-            'hra'              => $this->hra ?? 0,
-            'allowances'       => $this->allowances ?? [],  // ✅ Return as JSON array
-            'total_allowances' => $this->total_allowances ?? 0,  // ✅ Helper total
-            'bonus'            => $this->bonus ?? 0,  // ✅ New field
-            'pf_percentage'    => $this->pf_percentage ?? 0,
-            'pf_deduction'     => $this->pf_deduction ?? 0,
-            'esi_employee'     => $this->esi_employee ?? 0,
-            'esi_employer'     => $this->esi_employer ?? 0,
-            'pt_amount'        => $this->pt_amount ?? 0,
-            'pt_state'         => $this->pt_state,
-            'tds_amount'       => $this->tds_amount ?? 0,
-            'other_deductions' => $this->other_deductions ?? 0,
-            'ctc'              => $this->ctc ?? 0,
-            // Documents
-            'pan_number'       => $this->pan_number,
-            'aadhaar_number'   => $this->aadhaar_number,
-            'driving_license'  => $this->driving_license,
-            'passport_number'  => $this->passport_number,
-            'voter_id'         => $this->voter_id,
-            'uan_number'       => $this->uan_number,
             'created_at'       => $this->created_at?->toDateString(),
         ];
+
+        if ($showSensitive) {
+            $res = array_merge($res, [
+                // Bank details
+                'bank_name'           => $this->bank_name,
+                'bank_account_number' => $this->bank_account_number,
+                'bank_ifsc'           => $this->bank_ifsc,
+                'bank_branch'         => $this->bank_branch,
+                // Salary
+                'basic_salary'     => $this->basic_salary ?? 0,
+                'hra'              => $this->hra ?? 0,
+                'allowances'       => $this->allowances ?? [],
+                'total_allowances' => $this->total_allowances ?? 0,
+                'bonus'            => $this->bonus ?? 0,
+                'pf_percentage'    => $this->pf_percentage ?? 0,
+                'pf_deduction'     => $this->pf_deduction ?? 0,
+                'esi_employee'     => $this->esi_employee ?? 0,
+                'esi_employer'     => $this->esi_employer ?? 0,
+                'pt_amount'        => $this->pt_amount ?? 0,
+                'pt_state'         => $this->pt_state,
+                'tds_amount'       => $this->tds_amount ?? 0,
+                'other_deductions' => $this->other_deductions ?? 0,
+                'ctc'              => $this->ctc ?? 0,
+                // Documents
+                'pan_number'       => $this->pan_number,
+                'aadhaar_number'   => $this->aadhaar_number,
+                'driving_license'  => $this->driving_license,
+                'passport_number'  => $this->passport_number,
+                'voter_id'         => $this->voter_id,
+                'uan_number'       => $this->uan_number,
+                'previous_designation' => $this->previousDesignation?->title,
+            ]);
+        }
+
+        return $res;
     }
 }

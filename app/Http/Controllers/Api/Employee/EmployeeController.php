@@ -54,8 +54,18 @@ class EmployeeController extends Controller
             if ($request->filled('reporting_to')) $query->where('reporting_to', $request->reporting_to);
         } elseif ($this->isManager()) {
             $deptId = $this->managerDeptId();
-            if (!$deptId) return response()->json(['data' => [], 'message' => 'No department assigned.'], 200);
-            $query->where('department_id', $deptId);
+            $employeeId = $user->employee?->id;
+
+            $query->where(function ($q) use ($deptId, $employeeId) {
+                if ($deptId) {
+                    $q->where('department_id', $deptId);
+                }
+                if ($employeeId) {
+                    $q->orWhere('reporting_to', $employeeId)
+                      ->orWhere('id', $employeeId);
+                }
+            });
+
             if ($request->filled('search')) {
                 $query->where(function ($q) use ($request) {
                     $q->where('first_name', 'like', "%{$request->search}%")
@@ -193,7 +203,7 @@ class EmployeeController extends Controller
 
         return response()->json([
             'message' => 'Employee created successfully.',
-            'data' => new EmployeeResource($employee->load(['department', 'designation', 'manager'])),
+            'data' => new EmployeeResource($employee->load(['department', 'designation', 'manager', 'previousDesignation'])),
         ], 201);
     }
 
@@ -215,7 +225,7 @@ class EmployeeController extends Controller
         }
 
         return response()->json([
-            'data' => new EmployeeResource($employee->load(['department', 'designation', 'manager'])),
+            'data' => new EmployeeResource($employee->load(['department', 'designation', 'manager', 'previousDesignation'])),
         ]);
     }
 
@@ -294,7 +304,7 @@ class EmployeeController extends Controller
 
         return response()->json([
             'message' => 'Employee updated successfully.',
-            'data' => new EmployeeResource($employee->load(['department', 'designation', 'manager'])),
+            'data' => new EmployeeResource($employee->load(['department', 'designation', 'manager', 'previousDesignation'])),
         ]);
     }
 

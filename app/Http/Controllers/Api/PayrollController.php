@@ -10,7 +10,6 @@ use App\Models\CompanySetting;
 use App\Models\Leave;
 use App\Models\Payroll;
 use App\Models\PayrollItem;
-use App\Models\PayslipRequest;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
@@ -562,92 +561,7 @@ class PayrollController extends Controller
         return $pdf->stream($filename);
     }
 
-    /**
-     * Request payslip (employee)
-     */
-    public function requestPayslip(Payroll $payroll): JsonResponse
-    {
-        $user       = auth()->user();
-        $isAdmin    = $user->role === 'admin';
-        $employeeId = $isAdmin ? $payroll->employee_id : ($user->employee->id ?? null);
 
-        if (!$employeeId) 
-            return response()->json(['message' => 'No employee profile linked.'], 422);
-        
-        if (!$isAdmin && $payroll->employee_id !== $employeeId) 
-            return response()->json(['message' => 'Unauthorized.'], 403);
-
-        $exists = PayslipRequest::where('payroll_id', $payroll->id)
-            ->where('employee_id', $employeeId)
-            ->where('status', 'pending')
-            ->exists();
-            
-        if ($exists) 
-            return response()->json(['message' => 'A pending request already exists.'], 422);
-
-        PayslipRequest::create([
-            'payroll_id' => $payroll->id, 
-            'employee_id' => $employeeId, 
-            'status' => 'pending'
-        ]);
-        
-        return response()->json(['message' => 'Payslip request submitted to HR.'], 200);
-    }
-
-    /**
-     * Get all payslip requests (admin)
-     */
-    public function indexRequests(Request $request): JsonResponse
-    {
-        if (auth()->user()->role !== 'admin') {
-            return response()->json(['message' => 'Unauthorized.'], 403);
-        }
-
-        $requests = PayslipRequest::with(['employee.department', 'payroll'])
-            ->when($request->status, fn($q, $s) => $q->where('status', $s))
-            ->when($request->employee_id, fn($q, $id) => $q->where('employee_id', $id))
-            ->latest()
-            ->paginate($request->per_page ?? 10);
-
-        return response()->json($requests);
-    }
-
-    /**
-     * Fulfill payslip request (approve/reject)
-     */
-    public function fulfillRequest(Request $request, $id): JsonResponse
-    {
-        if (auth()->user()->role !== 'admin') {
-            return response()->json(['message' => 'Unauthorized.'], 403);
-        }
-
-        $request->validate([
-            'status'      => ['required', 'in:approved,rejected'],
-            'admin_notes' => ['nullable', 'string'],
-        ]);
-
-        $payslipRequest = PayslipRequest::with('payroll')->findOrFail($id);
-
-        DB::transaction(function () use ($request, $payslipRequest) {
-            $payslipRequest->update([
-                'status' => $request->status, 
-                'admin_notes' => $request->admin_notes
-            ]);
-            
-            if ($request->status === 'approved') {
-                $payslipRequest->payroll->update(['status' => 'paid', 'paid_at' => now()]);
-            }
-        });
-
-        if ($request->status === 'approved') {
-            $this->sendEmail($payslipRequest->payroll_id);
-            $message = 'Request approved and payslip emailed.';
-        } else {
-            $message = 'Payslip request rejected.';
-        }
-
-        return response()->json(['message' => $message], 200);
-    }
 
     /**
      * Export payroll data to CSV

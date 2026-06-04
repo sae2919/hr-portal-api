@@ -1,73 +1,17 @@
 <?php
+require __DIR__ . '/../vendor/autoload.php';
+$app = require_once __DIR__ . '/../bootstrap/app.php';
 
-namespace App\Models;
+$kernel = $app->make(Illuminate\Contracts\Http\Kernel::class);
+$response = $kernel->handle(
+    Illuminate\Http\Request::capture()
+);
 
-use Illuminate\Database\Eloquent\Factories\HasFactory;
-use Illuminate\Foundation\Auth\User as Authenticatable;
-use Illuminate\Notifications\Notifiable;
-use Laravel\Sanctum\HasApiTokens;
-use Spatie\Permission\Traits\HasRoles;
+use App\Models\User;
 
-class User extends Authenticatable
-{
-    use HasApiTokens, HasFactory, Notifiable, HasRoles {
-        hasRole as spatieHasRole;
-    }
+class UserWithParentOverride extends User {
+    protected $table = 'users';
 
-    protected $fillable = [
-        'name',
-        'email',
-        'password',
-        'phone',
-        'status',
-        'employee_id',
-        'last_login_at',
-    ];
-
-    protected $hidden = [
-        'password',
-        'remember_token',
-    ];
-
-    protected $casts = [
-        'email_verified_at' => 'datetime',
-        'last_login_at'     => 'datetime',
-        'password'          => 'hashed',
-    ];
-
-    // ─── Relationships ────────────────────────────────────────────
-
-    public function employee()
-    {
-        return $this->belongsTo(Employee::class);
-    }
-
-    // ─── Helpers ──────────────────────────────────────────────────
-
-    public function isAdmin(): bool
-    {
-        return $this->hasRole('admin');
-    }
-
-    public function isHR(): bool
-    {
-        return $this->hasRole('hr');
-    }
-
-    public function isManager(): bool
-    {
-        return $this->hasRole('manager');
-    }
-
-    public function isEmployee(): bool
-    {
-        return $this->hasRole('employee');
-    }
-
-    /**
-     * Override hasRole to fall back to the designation title
-     * mapping to support designation-based permissions.
-     */
     public function hasRole($roles, string $guard = null): bool
     {
         if (is_string($roles)) {
@@ -79,7 +23,7 @@ class User extends Authenticatable
         }
 
         foreach ($roles as $role) {
-            if ($this->spatieHasRole($role, $guard)) {
+            if (parent::hasRole($role, $guard)) {
                 return true;
             }
         }
@@ -139,5 +83,36 @@ class User extends Authenticatable
         }
 
         return false;
+    }
+}
+
+// Test users
+$testCases = [
+    'admin@hrportal.com' => ['admin', 'super_admin'],
+    'hr@hrportal.com' => ['hr'],
+    'vasa.raviteja@gmail.com' => ['team_lead'],
+    'santoshasole9@gmail.com' => ['team_lead'],
+    'sshakthi507@gmail.com' => ['team_lead'],
+    'ladhwenavaneetha@gmail.com' => ['team_lead'],
+    'srinivasbalam2003@gmail.com' => ['employee'],
+];
+
+echo str_pad("Email", 30) . str_pad("Expected Role", 15) . "hasRole Test Result\n";
+echo str_repeat("-", 65) . "\n";
+
+foreach ($testCases as $email => $rolesToCheck) {
+    $user = UserWithParentOverride::where('email', $email)->first();
+    if ($user) {
+        $designation = $user->employee?->designation?->title ?? 'None';
+        echo str_pad($email, 30);
+        
+        $results = [];
+        foreach ($rolesToCheck as $role) {
+            $has = $user->hasRole($role) ? "TRUE" : "FALSE";
+            $results[] = "$role: $has";
+        }
+        echo str_pad(implode(', ', $rolesToCheck), 20) . " | " . implode(', ', $results) . " (Desig: $designation)\n";
+    } else {
+        echo str_pad($email, 30) . "Not Found\n";
     }
 }

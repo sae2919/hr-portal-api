@@ -31,7 +31,7 @@ class DesignationController extends Controller
 
         $designations = $query
             ->orderBy('title')
-            ->paginate(10);
+            ->paginate($request->per_page ?? 10);
 
         return DesignationResource::collection($designations);
     }

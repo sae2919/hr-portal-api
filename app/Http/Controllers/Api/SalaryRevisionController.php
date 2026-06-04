@@ -69,6 +69,7 @@ class SalaryRevisionController extends Controller
             'new_bonus'          => ['required', 'numeric', 'min:0'],
             'effective_date'     => ['required', 'date'],
             'reason'             => ['required', 'string', 'max:255'],
+            'new_designation_id' => ['nullable', 'exists:designations,id'],
         ]);
 
         $employeeId = $request->employee_id;
@@ -137,7 +138,17 @@ class SalaryRevisionController extends Controller
                 'approved_by'          => auth()->id(),
             ]);
 
-            // 2. Mark old active structures as inactive
+            // 2. Update employee designation if new_designation_id is provided
+            if ($request->filled('new_designation_id')) {
+                $emp = Employee::find($employeeId);
+                if ($emp) {
+                    $emp->update([
+                        'designation_id' => $request->new_designation_id
+                    ]);
+                }
+            }
+
+            // 3. Mark old active structures as inactive
             SalaryStructure::where('employee_id', $employeeId)
                 ->where('status', 'active')
                 ->update(['status' => 'inactive']);

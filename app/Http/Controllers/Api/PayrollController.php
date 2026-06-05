@@ -381,12 +381,16 @@ class PayrollController extends Controller
         $structurePtAmount  = (float) ($salary->tax_deduction ?? 0);
         $ptAmount           = $request->has('pt_amount') ? (float) $request->pt_amount : $structurePtAmount;
 
-        $pfDeduction     = $request->input('include_pf', true) ? round($basic * $pfPercentage / 100, 2) : 0;
+        $dailyRate    = $workingDays > 0 ? $grossSalary / $workingDays : 0;
+        $lopDeduction = round($dailyRate * $lopDays, 2);
+
+        // Calculate prorated Basic for PF calculation purposes
+        $attendanceFactor = $workingDays > 0 ? ($workingDays - $lopDays) / $workingDays : 0;
+        $proratedBasic = round($basic * $attendanceFactor, 2);
+
+        $pfDeduction     = $request->input('include_pf', true) ? round($proratedBasic * $pfPercentage / 100, 2) : 0;
         $taxDeduction    = $request->input('include_pt', true) ? $ptAmount : 0;
         $otherDeductions = (float) $salary->other_deductions;
-
-        $dailyRate    = $workingDays > 0 ? $basic / $workingDays : 0;
-        $lopDeduction = round($dailyRate * $lopDays, 2);
 
         $totalDeductions = $pfDeduction + $taxDeduction + $otherDeductions + $lopDeduction;
         $netSalary       = round($grossSalary - $totalDeductions, 2);

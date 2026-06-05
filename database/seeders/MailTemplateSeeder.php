@@ -185,6 +185,7 @@ Techsprout AI Labs Pvt. Ltd.</p>',
 <div style="margin: 24px 0; text-align: center;">
   <a href="{{portal_link}}" style="background-color: #3b82f6; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: bold; display: inline-block;">Access Onboarding Portal</a>
 </div>
+<p style="color: #ef4444; font-weight: 500; font-size: 14px;">Please note: This secure access link will expire in 48 hours. Ensure that you submit your details and upload the required files within 48 hours.</p>
 <p>Your joining date is scheduled for <strong>{{joining_date}}</strong>.</p>
 <p style="margin-top: 32px; border-top: 1px solid #f1f5f9; padding-top: 20px;">Best regards,<br><strong>Techsprout HR Team</strong></p>',
                 'style' => '',

@@ -105,7 +105,20 @@ try {
     $ch = curl_init("http://127.0.0.1:8000/api/v1/public/onboarding/{$candidateId}/submit");
     curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
     curl_setopt($ch, CURLOPT_POST, true);
+    curl_setopt($ch, CURLOPT_POSTFIELDS, http_build_query([
+        'phone' => '8887776665',
+        'dob' => '1995-08-15',
+        'gender' => 'male',
+        'address' => '123 Test Street, Bangalore',
+        'bank_name' => 'HDFC Bank',
+        'bank_account_number' => '50100123456789',
+        'bank_ifsc' => 'HDFC0000123',
+        'bank_branch' => 'Bangalore Main',
+        'pan_number' => 'ABCDE1234F',
+        'aadhaar_number' => '123456789012'
+    ]));
     curl_setopt($ch, CURLOPT_HTTPHEADER, [
+        'Content-Type: application/x-www-form-urlencoded',
         'Accept: application/json'
     ]);
     $response = curl_exec($ch);

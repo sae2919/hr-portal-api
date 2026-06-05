@@ -133,7 +133,7 @@ class OnboardingController extends Controller
                     'position' => $onboardingRequest->position,
                     'department' => $onboardingRequest->department,
                     'joining_date' => $onboardingRequest->joining_date,
-                    'portal_link' => env('FRONTEND_URL', 'http://localhost:3000') . '/onboarding/candidate/' . $onboardingRequest->id,
+                    'portal_link' => env('FRONTEND_URL', 'http://127.0.0.1:3000') . '/onboarding/candidate/' . $onboardingRequest->access_token,
                 ]
             );
 
@@ -287,6 +287,12 @@ class OnboardingController extends Controller
         DB::beginTransaction();
         
         try {
+            // Extract personal details from onboarding request
+            $personal = $onboardingRequest->personal_details ?? [];
+            if (is_string($personal)) {
+                $personal = json_decode($personal, true) ?? [];
+            }
+
             // Create employee record
             $nameParts = explode(' ', $onboardingRequest->candidate_name, 2);
             $firstName = $nameParts[0];
@@ -296,12 +302,23 @@ class OnboardingController extends Controller
                 'first_name' => $firstName,
                 'last_name' => $lastName,
                 'email' => $onboardingRequest->email,
-                'phone' => $onboardingRequest->phone,
+                'phone' => $onboardingRequest->phone ?: ($personal['phone'] ?? null),
                 'employee_code' => 'EMP' . str_pad(Employee::count() + 1, 4, '0', STR_PAD_LEFT),
                 'department' => $onboardingRequest->department,
                 'designation' => $onboardingRequest->position,
                 'joining_date' => $onboardingRequest->joining_date,
                 'status' => 'active',
+                'dob' => $personal['dob'] ?? null,
+                'gender' => $personal['gender'] ?? null,
+                'address' => $personal['address'] ?? null,
+                'bank_name' => $personal['bank_name'] ?? null,
+                'bank_account_number' => $personal['bank_account_number'] ?? null,
+                'bank_ifsc' => $personal['bank_ifsc'] ?? null,
+                'bank_branch' => $personal['bank_branch'] ?? null,
+                'pan_number' => $personal['pan_number'] ?? null,
+                'aadhaar_number' => $personal['aadhaar_number'] ?? null,
+                'passport_number' => $personal['passport_number'] ?? null,
+                'driving_license' => $personal['driving_license'] ?? null,
             ]);
             
             // Create user account for employee
@@ -374,6 +391,13 @@ class OnboardingController extends Controller
      */
     public function showPublic(OnboardingRequest $onboardingRequest): JsonResponse
     {
+        if ($onboardingRequest->isLinkExpired()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'This onboarding link has expired. Onboarding links are only valid for 48 hours.'
+            ], 403);
+        }
+
         $onboardingRequest->load(['documents']);
         
         return response()->json([
@@ -387,6 +411,13 @@ class OnboardingController extends Controller
      */
     public function updatePublic(Request $request, OnboardingRequest $onboardingRequest): JsonResponse
     {
+        if ($onboardingRequest->isLinkExpired()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'This onboarding link has expired.'
+            ], 403);
+        }
+
         if ($onboardingRequest->status === 'onboarded') {
             return response()->json([
                 'success' => false,
@@ -410,8 +441,15 @@ class OnboardingController extends Controller
     /**
      * Submit onboarding documents from public candidate portal
      */
-    public function submitPublic(OnboardingRequest $onboardingRequest): JsonResponse
+    public function submitPublic(Request $request, OnboardingRequest $onboardingRequest): JsonResponse
     {
+        if ($onboardingRequest->isLinkExpired()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'This onboarding link has expired.'
+            ], 403);
+        }
+
         if ($onboardingRequest->status === 'onboarded') {
             return response()->json([
                 'success' => false,
@@ -419,18 +457,86 @@ class OnboardingController extends Controller
             ], 422);
         }
 
-        // Reset status back to pending if it was rejected or draft
-        if ($onboardingRequest->status === 'rejected') {
-            $onboardingRequest->update([
+        $request->validate([
+            'phone' => 'required|string|max:20',
+            'dob' => 'required|date',
+            'gender' => 'required|in:male,female,other',
+            'address' => 'required|string|max:1000',
+            'bank_name' => 'required|string|max:255',
+            'bank_account_number' => 'required|string|max:50',
+            'bank_ifsc' => 'required|string|max:20',
+            'bank_branch' => 'required|string|max:255',
+            'pan_number' => 'nullable|string|max:20',
+            'aadhaar_number' => 'nullable|string|max:20',
+            'passport_number' => 'nullable|string|max:20',
+            'driving_license' => 'nullable|string|max:20',
+        ]);
+
+        $details = $request->only([
+            'dob', 'gender', 'address', 'bank_name', 'bank_account_number',
+            'bank_ifsc', 'bank_branch', 'pan_number', 'aadhaar_number',
+            'passport_number', 'driving_license'
+        ]);
+
+        $onboardingRequest->update([
+            'phone' => $request->phone,
+            'personal_details' => $details,
+            'status' => $onboardingRequest->status === 'rejected' ? 'pending' : $onboardingRequest->status,
+            'rejection_reason' => $onboardingRequest->status === 'rejected' ? null : $onboardingRequest->rejection_reason,
+        ]);
+
+        // Generate PDF
+        $pdf = \PDF::loadView('pdf.onboarding-form', [
+            'candidate' => $onboardingRequest,
+            'details' => $details,
+        ]);
+
+        $fileName = "onboarding_form_{$onboardingRequest->id}.pdf";
+        $filePath = "onboarding/{$onboardingRequest->id}/{$fileName}";
+
+        Storage::disk('public')->put($filePath, $pdf->output());
+
+        // Upsert onboarding document
+        $document = OnboardingDocument::where('onboarding_request_id', $onboardingRequest->id)
+            ->where('document_type', 'onboarding_form')
+            ->first();
+
+        if ($document) {
+            Storage::disk('public')->delete($document->file_path);
+            $document->update([
+                'original_name' => 'Onboarding_Details_Form.pdf',
+                'file_path' => $filePath,
+                'file_size' => $this->formatBytes(Storage::disk('public')->size($filePath)),
+                'mime_type' => 'application/pdf',
                 'status' => 'pending',
-                'rejection_reason' => null
+            ]);
+        } else {
+            OnboardingDocument::create([
+                'onboarding_request_id' => $onboardingRequest->id,
+                'document_type' => 'onboarding_form',
+                'original_name' => 'Onboarding_Details_Form.pdf',
+                'file_path' => $filePath,
+                'file_size' => $this->formatBytes(Storage::disk('public')->size($filePath)),
+                'mime_type' => 'application/pdf',
+                'status' => 'pending',
             ]);
         }
-        
+
         return response()->json([
             'success' => true,
-            'message' => 'Onboarding documents submitted successfully!',
+            'message' => 'Onboarding documents and details form submitted successfully!',
             'data' => $onboardingRequest->load(['documents'])
         ]);
+    }
+
+    private function formatBytes($bytes, $precision = 2)
+    {
+        $units = ['B', 'KB', 'MB', 'GB'];
+        $bytes = max($bytes, 0);
+        $pow = floor(($bytes ? log($bytes) : 0) / log(1024));
+        $pow = min($pow, count($units) - 1);
+        $bytes /= pow(1024, $pow);
+        
+        return round($bytes, $precision) . ' ' . $units[$pow];
     }
 }

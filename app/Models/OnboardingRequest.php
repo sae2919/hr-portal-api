@@ -13,14 +13,36 @@ class OnboardingRequest extends Model
     protected $fillable = [
         'candidate_name', 'email', 'phone', 'position', 'department',
         'joining_date', 'ctc', 'status', 'rejection_reason',
-        'approved_by', 'approved_at', 'created_by'
+        'approved_by', 'approved_at', 'created_by', 'personal_details',
+        'access_token', 'link_expires_at'
     ];
 
     protected $casts = [
         'joining_date' => 'date',
         'approved_at' => 'datetime',
         'ctc' => 'decimal:2',
+        'personal_details' => 'array',
+        'link_expires_at' => 'datetime',
     ];
+
+    protected static function boot()
+    {
+        parent::boot();
+        
+        static::creating(function ($model) {
+            if (empty($model->access_token)) {
+                $model->access_token = \Illuminate\Support\Str::random(40);
+            }
+            if (empty($model->link_expires_at)) {
+                $model->link_expires_at = now()->addHours(48);
+            }
+        });
+    }
+
+    public function isLinkExpired(): bool
+    {
+        return $this->link_expires_at && $this->link_expires_at->isPast();
+    }
 
     public function approver(): BelongsTo
     {

@@ -63,10 +63,10 @@ Route::prefix('v1')->group(function () {
     // PUBLIC ONBOARDING ROUTES FOR CANDIDATES (NO AUTH REQUIRED)
     // ============================================
     Route::prefix('public/onboarding')->group(function () {
-        Route::get('/{onboardingRequest}', [OnboardingController::class, 'showPublic']);
-        Route::put('/{onboardingRequest}', [OnboardingController::class, 'updatePublic']);
-        Route::post('/{onboardingRequest}/documents', [DocumentController::class, 'uploadPublic']);
-        Route::post('/{onboardingRequest}/submit', [OnboardingController::class, 'submitPublic']);
+        Route::get('/{onboardingRequest:access_token}', [OnboardingController::class, 'showPublic']);
+        Route::put('/{onboardingRequest:access_token}', [OnboardingController::class, 'updatePublic']);
+        Route::post('/{onboardingRequest:access_token}/documents', [DocumentController::class, 'uploadPublic']);
+        Route::post('/{onboardingRequest:access_token}/submit', [OnboardingController::class, 'submitPublic']);
         Route::delete('/documents/{document}', [DocumentController::class, 'destroyPublic']);
     });
 

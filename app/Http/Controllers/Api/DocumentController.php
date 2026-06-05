@@ -119,6 +119,13 @@ class DocumentController extends Controller
      */
     public function uploadPublic(Request $request, OnboardingRequest $onboardingRequest): JsonResponse
     {
+        if ($onboardingRequest->isLinkExpired()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'This onboarding link has expired.'
+            ], 403);
+        }
+
         if ($onboardingRequest->status === 'onboarded') {
             return response()->json([
                 'success' => false,

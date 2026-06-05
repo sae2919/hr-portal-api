@@ -142,11 +142,25 @@ class SalaryRevisionController extends Controller
             if ($request->filled('new_designation_id')) {
                 $emp = Employee::find($employeeId);
                 if ($emp) {
-                    $emp->update([
-                        'designation_id' => $request->new_designation_id
-                    ]);
+                    if (strcasecmp($request->reason, 'Promotion') === 0) {
+                        $emp->previous_designation_id = $emp->designation_id;
+                    }
+                    $emp->designation_id = $request->new_designation_id;
+                    $emp->save();
                 }
             }
+
+            // Sync the revised salary fields directly to the employees table columns
+            DB::table('employees')->where('id', $employeeId)->update([
+                'basic_salary'     => $newBasic,
+                'hra'              => $newHra,
+                'allowances'       => json_encode([['type' => 'other', 'amount' => $newAllowances]]),
+                'bonus'            => $newBonus,
+                'pf_deduction'     => $pfDeduction,
+                'tds_amount'       => $taxDeduction,
+                'other_deductions' => $otherDeductions,
+                'ctc'              => $newGross * 12,
+            ]);
 
             // 3. Mark old active structures as inactive
             SalaryStructure::where('employee_id', $employeeId)

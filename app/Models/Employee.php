@@ -84,11 +84,6 @@ class Employee extends Model
             }
         });
 
-        static::updating(function ($employee) {
-            if ($employee->isDirty('designation_id')) {
-                $employee->previous_designation_id = $employee->getOriginal('designation_id');
-            }
-        });
 
         static::saved(function ($employee) {
             // Whenever an employee is saved (created or updated), we ensure they have an active SalaryStructure matching their current employee salary fields

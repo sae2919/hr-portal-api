@@ -107,9 +107,9 @@ class OnboardingController extends Controller
                 ['task_name' => 'Create Employee Record', 'assigned_to' => 'HR', 'due_days' => 3],
                 ['task_name' => 'Schedule Orientation', 'assigned_to' => 'HR', 'due_days' => 7],
             ];
-            
+
             $joiningDate = Carbon::parse($request->joining_date);
-            
+
             foreach ($defaultTasks as $task) {
                 OnboardingTask::create([
                     'onboarding_request_id' => $onboardingRequest->id,
@@ -120,9 +120,9 @@ class OnboardingController extends Controller
                     'status' => 'pending',
                 ]);
             }
-            
+
             DB::commit();
-            
+
             // Trigger welcome onboarding mail to candidate
             \App\Jobs\SendReusableMail::dispatch(
                 'candidate_onboarding_welcome',
@@ -133,6 +133,7 @@ class OnboardingController extends Controller
                     'position' => $onboardingRequest->position,
                     'department' => $onboardingRequest->department,
                     'joining_date' => $onboardingRequest->joining_date,
+                    'portal_link' => env('FRONTEND_URL', 'http://localhost:3000') . '/onboarding/candidate/' . $onboardingRequest->id,
                 ]
             );
 
@@ -141,7 +142,7 @@ class OnboardingController extends Controller
                 'message' => 'Onboarding request created successfully',
                 'data' => $onboardingRequest->load(['documents', 'tasks'])
             ], 201);
-            
+
         } catch (\Exception $e) {
             DB::rollBack();
             return response()->json([
@@ -365,6 +366,71 @@ class OnboardingController extends Controller
         return response()->json([
             'success' => true,
             'message' => 'Onboarding request deleted successfully'
+        ]);
+    }
+    
+    /**
+     * Get onboarding request details for public candidate portal
+     */
+    public function showPublic(OnboardingRequest $onboardingRequest): JsonResponse
+    {
+        $onboardingRequest->load(['documents']);
+        
+        return response()->json([
+            'success' => true,
+            'data' => $onboardingRequest
+        ]);
+    }
+    
+    /**
+     * Update onboarding details (like phone number) from public candidate portal
+     */
+    public function updatePublic(Request $request, OnboardingRequest $onboardingRequest): JsonResponse
+    {
+        if ($onboardingRequest->status === 'onboarded') {
+            return response()->json([
+                'success' => false,
+                'message' => 'Onboarding has already been completed.'
+            ], 422);
+        }
+
+        $request->validate([
+            'phone' => 'nullable|string|max:20',
+        ]);
+        
+        $onboardingRequest->update($request->only(['phone']));
+        
+        return response()->json([
+            'success' => true,
+            'message' => 'Details updated successfully',
+            'data' => $onboardingRequest->load(['documents'])
+        ]);
+    }
+    
+    /**
+     * Submit onboarding documents from public candidate portal
+     */
+    public function submitPublic(OnboardingRequest $onboardingRequest): JsonResponse
+    {
+        if ($onboardingRequest->status === 'onboarded') {
+            return response()->json([
+                'success' => false,
+                'message' => 'Onboarding has already been completed.'
+            ], 422);
+        }
+
+        // Reset status back to pending if it was rejected or draft
+        if ($onboardingRequest->status === 'rejected') {
+            $onboardingRequest->update([
+                'status' => 'pending',
+                'rejection_reason' => null
+            ]);
+        }
+        
+        return response()->json([
+            'success' => true,
+            'message' => 'Onboarding documents submitted successfully!',
+            'data' => $onboardingRequest->load(['documents'])
         ]);
     }
 }

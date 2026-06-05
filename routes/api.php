@@ -60,6 +60,17 @@ Route::prefix('v1')->group(function () {
     Route::get('/payrolls/{payroll}/payslip', [PayrollController::class, 'downloadPayslip']);
 
     // ============================================
+    // PUBLIC ONBOARDING ROUTES FOR CANDIDATES (NO AUTH REQUIRED)
+    // ============================================
+    Route::prefix('public/onboarding')->group(function () {
+        Route::get('/{onboardingRequest}', [OnboardingController::class, 'showPublic']);
+        Route::put('/{onboardingRequest}', [OnboardingController::class, 'updatePublic']);
+        Route::post('/{onboardingRequest}/documents', [DocumentController::class, 'uploadPublic']);
+        Route::post('/{onboardingRequest}/submit', [OnboardingController::class, 'submitPublic']);
+        Route::delete('/documents/{document}', [DocumentController::class, 'destroyPublic']);
+    });
+
+    // ============================================
     // PROTECTED ROUTES (REQUIRES AUTH)
     // ============================================
     Route::middleware('auth:sanctum')->group(function () {

@@ -181,7 +181,11 @@ Techsprout AI Labs Pvt. Ltd.</p>',
                 'subject' => 'Welcome to Onboarding at Techsprout! 👋',
                 'body' => '<p>Hello <strong>{{name}}</strong>,</p>
 <p>Congratulations on your selection for the position of <strong>{{position}}</strong> in the <strong>{{department}}</strong> department! We are excited to welcome you to our team.</p>
-<p>To begin your onboarding process, please access your onboarding portal where you can complete your details and upload required documents. Your joining date is scheduled for <strong>{{joining_date}}</strong>.</p>
+<p>To begin your onboarding process, please click the button below to access your onboarding portal, where you can complete your details and upload the required documents.</p>
+<div style="margin: 24px 0; text-align: center;">
+  <a href="{{portal_link}}" style="background-color: #3b82f6; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: bold; display: inline-block;">Access Onboarding Portal</a>
+</div>
+<p>Your joining date is scheduled for <strong>{{joining_date}}</strong>.</p>
 <p style="margin-top: 32px; border-top: 1px solid #f1f5f9; padding-top: 20px;">Best regards,<br><strong>Techsprout HR Team</strong></p>',
                 'style' => '',
                 'active_status' => 1,

@@ -113,4 +113,68 @@ class DocumentController extends Controller
         
         return round($bytes, $precision) . ' ' . $units[$pow];
     }
+    
+    /**
+     * Upload document from public candidate portal
+     */
+    public function uploadPublic(Request $request, OnboardingRequest $onboardingRequest): JsonResponse
+    {
+        if ($onboardingRequest->status === 'onboarded') {
+            return response()->json([
+                'success' => false,
+                'message' => 'Onboarding has already been completed.'
+            ], 422);
+        }
+
+        $request->validate([
+            'document' => 'required|file|mimes:pdf,jpg,jpeg,png,doc,docx|max:5120', // 5MB max
+            'document_type' => 'required|in:resume,id_proof,address_proof,degree,previous_employment,bank_details,pan_card,aadhaar_card,passport,other',
+        ]);
+        
+        $file = $request->file('document');
+        $originalName = $file->getClientOriginalName();
+        $fileSize = $file->getSize();
+        $mimeType = $file->getMimeType();
+        
+        // Store file
+        $path = $file->store("onboarding/{$onboardingRequest->id}", 'public');
+        
+        $document = OnboardingDocument::create([
+            'onboarding_request_id' => $onboardingRequest->id,
+            'document_type' => $request->document_type,
+            'original_name' => $originalName,
+            'file_path' => $path,
+            'file_size' => $this->formatBytes($fileSize),
+            'mime_type' => $mimeType,
+            'status' => 'pending',
+        ]);
+        
+        return response()->json([
+            'success' => true,
+            'message' => 'Document uploaded successfully',
+            'data' => $document
+        ]);
+    }
+    
+    /**
+     * Delete document from public candidate portal
+     */
+    public function destroyPublic(OnboardingDocument $document): JsonResponse
+    {
+        $onboardingRequest = $document->onboardingRequest;
+        if ($onboardingRequest && $onboardingRequest->status === 'onboarded') {
+            return response()->json([
+                'success' => false,
+                'message' => 'Onboarding has already been completed.'
+            ], 422);
+        }
+
+        Storage::disk('public')->delete($document->file_path);
+        $document->delete();
+        
+        return response()->json([
+            'success' => true,
+            'message' => 'Document deleted successfully'
+        ]);
+    }
 }

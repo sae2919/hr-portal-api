@@ -141,6 +141,7 @@ Route::prefix('v1')->group(function () {
         Route::get('/payrolls/{payroll}/items',       [PayrollController::class, 'items']);
         Route::post('/payrolls/{payroll}/mark-paid',  [PayrollController::class, 'markPaid']);
         Route::post('/payrolls/{payroll}/send-email', [PayrollController::class, 'sendEmail']);
+        Route::delete('/payrolls/{payroll}',          [PayrollController::class, 'destroy']);
 
         // ──────────────────────────────────────
         // SALARY REVISIONS

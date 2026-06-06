@@ -142,7 +142,7 @@ class HierarchyService
     {
         return [
             'total_employees'  => Employee::count(),
-            'total_managers'   => Employee::whereIn('position_level', ['manager', 'senior_manager', 'director', 'vp', 'c_level'])->count(),
+            'total_managers'   => Employee::whereIn('position_level', ['manager', 'senior_manager', 'director', 'vp'])->count(),
             'total_team_leads' => Employee::where('position_level', 'team_lead')->count(),
             'avg_team_size'    => round(
                 Employee::has('subordinates')->withCount('subordinates')->get()->avg('subordinates_count') ?? 0,

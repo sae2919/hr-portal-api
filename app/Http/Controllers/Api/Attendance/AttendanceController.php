@@ -77,8 +77,8 @@ class AttendanceController extends Controller
             }
 
         } elseif ($this->isManager() || $this->isTeamLead()) {
-            $deptId = $this->managerDeptId();
-            $query->whereHas('employee', fn($q) => $q->where('department_id', $deptId));
+            $myEmployeeId = $user->employee?->id;
+            $query->whereHas('employee', fn($q) => $q->where('reporting_to', $myEmployeeId));
 
             if ($request->filled('employee_id')) {
                 $query->where('employee_id', $request->employee_id);
@@ -126,8 +126,9 @@ class AttendanceController extends Controller
 
         } elseif ($this->isManager() || $this->isTeamLead()) {
             $employee = Employee::find($request->employee_id);
-            if ($employee->department_id !== $this->managerDeptId()) {
-                return response()->json(['message' => 'You can only manage attendance for your department.'], 403);
+            $myEmployeeId = $user->employee?->id;
+            if ($employee->id !== $myEmployeeId && $employee->reporting_to !== $myEmployeeId) {
+                return response()->json(['message' => 'You can only manage attendance for yourself or your direct reports.'], 403);
             }
 
         } else {
@@ -145,6 +146,7 @@ class AttendanceController extends Controller
                 'status'         => $request->status ?? 'present',
                 'overtime_hours' => $request->overtime_hours ?? 0,
                 'note'           => $request->note,
+                'is_posted'      => $this->isAdminOrHR(),
             ]
         );
 
@@ -163,7 +165,8 @@ class AttendanceController extends Controller
         if ($this->isAdminOrHR()) {
             // Full access
         } elseif ($this->isManager() || $this->isTeamLead()) {
-            if ($attendance->employee->department_id !== $this->managerDeptId()) {
+            $myEmployeeId = $user->employee?->id;
+            if ($attendance->employee_id !== $myEmployeeId && $attendance->employee->reporting_to !== $myEmployeeId) {
                 return response()->json(['message' => 'Forbidden.'], 403);
             }
         } else {
@@ -184,7 +187,8 @@ class AttendanceController extends Controller
         if ($this->isAdminOrHR()) {
             // Full access
         } elseif ($this->isManager() || $this->isTeamLead()) {
-            if ($attendance->employee->department_id !== $this->managerDeptId()) {
+            $myEmployeeId = $user->employee?->id;
+            if ($attendance->employee_id !== $myEmployeeId && $attendance->employee->reporting_to !== $myEmployeeId) {
                 return response()->json(['message' => 'Forbidden.'], 403);
             }
         } else {
@@ -201,7 +205,9 @@ class AttendanceController extends Controller
             'note'           => ['nullable', 'string', 'max:500'],
         ]);
 
-        $attendance->update($request->all());
+        $updateData = $request->all();
+        $updateData['is_posted'] = $this->isAdminOrHR();
+        $attendance->update($updateData);
 
         return response()->json([
             'message' => 'Attendance updated successfully.',
@@ -241,7 +247,7 @@ class AttendanceController extends Controller
 
         $attendance = Attendance::updateOrCreate(
             ['employee_id' => $request->employee_id, 'date' => $today],
-            ['check_in' => $now, 'status' => 'present']
+            ['check_in' => $now, 'status' => 'present', 'is_posted' => $this->isAdminOrHR()]
         );
 
         return response()->json([
@@ -273,7 +279,7 @@ class AttendanceController extends Controller
         }
 
         $now = Carbon::now()->format('H:i');
-        $attendance->update(['check_out' => $now]);
+        $attendance->update(['check_out' => $now, 'is_posted' => $this->isAdminOrHR()]);
 
         return response()->json([
             'message' => 'Checked out at ' . $now,
@@ -296,7 +302,7 @@ public function monthlyReport(Request $request): JsonResponse
             $employeeQuery->where('id', $request->employee_id);
         }
     } elseif ($this->isManager() || $this->isTeamLead()) {
-        $employeeQuery->where('department_id', $this->managerDeptId());
+        $employeeQuery->where('reporting_to', $user->employee?->id);
     } else {
         $employeeId = $user->employee?->id;
         if (!$employeeId) return response()->json(['message' => 'Employee record not found.'], 403);
@@ -429,6 +435,16 @@ public function worksheet(Request $request): JsonResponse
     $perPage = $request->per_page ?? 10;
     $user    = auth()->user();
 
+    \Log::info('WORKSHEET REQUEST:', [
+        'user_id' => $user?->id,
+        'user_name' => $user?->name,
+        'employee_id' => $user?->employee?->id,
+        'is_admin_or_hr' => $this->isAdminOrHR(),
+        'is_manager' => $this->isManager(),
+        'is_team_lead' => $this->isTeamLead(),
+        'request_all' => $request->all(),
+    ]);
+
     $employeeQuery = \DB::table('employees')
         ->leftJoin('departments', 'employees.department_id', '=', 'departments.id')
         ->leftJoin('attendances', function ($join) use ($date) {
@@ -441,12 +457,13 @@ public function worksheet(Request $request): JsonResponse
             'employees.first_name',
             'employees.last_name',
             'departments.name as department_name',
+            'attendances.id as attendance_id',
             'attendances.check_in',
             'attendances.check_out',
             'attendances.status',
             'attendances.overtime_hours',
             'attendances.note',
-            \DB::raw('CASE WHEN attendances.id IS NOT NULL THEN 1 ELSE 0 END as is_saved'),
+            \DB::raw('CASE WHEN attendances.id IS NOT NULL AND attendances.is_posted = 1 THEN 1 ELSE 0 END as is_saved'),
         ]);
 
     if ($this->isAdminOrHR()) {
@@ -454,7 +471,7 @@ public function worksheet(Request $request): JsonResponse
             $employeeQuery->where('employees.id', $request->employee_id);
         }
     } elseif ($this->isManager() || $this->isTeamLead()) {
-        $employeeQuery->where('employees.department_id', $this->managerDeptId());
+        $employeeQuery->where('employees.reporting_to', $user->employee?->id);
     } else {
         $employeeId = $user->employee?->id;
         if (!$employeeId) return response()->json(['message' => 'Employee record not found.'], 403);
@@ -490,7 +507,7 @@ public function worksheet(Request $request): JsonResponse
         }
 
         // If attendance record exists, use it
-        if ($row->is_saved) {
+        if ($row->attendance_id !== null) {
             return [
                 'employee_id'    => (int) $row->employee_id,
                 'name'           => !empty($fullName) ? $fullName : 'Unnamed Employee',
@@ -500,7 +517,7 @@ public function worksheet(Request $request): JsonResponse
                 'status'         => $row->status ?? 'present',
                 'overtime_hours' => (float) ($row->overtime_hours ?? 0),
                 'note'           => $row->note ?? '',
-                'is_saved'       => true,
+                'is_saved'       => (bool) $row->is_saved,
             ];
         }
 
@@ -542,13 +559,13 @@ public function worksheet(Request $request): JsonResponse
 
         $date         = $request->date;
         $updatedCount = 0;
-        $deptId       = ($this->isManager() || $this->isTeamLead()) ? $this->managerDeptId() : null;
+        $myEmployeeId = ($this->isManager() || $this->isTeamLead()) ? $user->employee?->id : null;
 
-        \DB::transaction(function () use ($request, $date, $deptId, &$updatedCount) {
+        \DB::transaction(function () use ($request, $date, $myEmployeeId, &$updatedCount) {
             foreach ($request->records as $record) {
-                if ($deptId) {
+                if ($myEmployeeId) {
                     $employee = Employee::find($record['employee_id']);
-                    if ($employee->department_id !== $deptId) continue;
+                    if ($employee->reporting_to !== $myEmployeeId) continue;
                 }
 
                 Attendance::updateOrCreate(
@@ -559,6 +576,7 @@ public function worksheet(Request $request): JsonResponse
                         'status'         => $record['status'],
                         'overtime_hours' => $record['overtime_hours'] ?? 0,
                         'note'           => $record['note']           ?? null,
+                        'is_posted'      => true,
                     ]
                 );
                 $updatedCount++;
@@ -765,11 +783,11 @@ public function myCalendar(Request $request): JsonResponse
                 'leave_types.name as leave_type',
             ]);
 
-        // Manager / Team Lead: scope to own department only
+        // Manager / Team Lead: scope to own reporting employees only
         if (!$this->isAdminOrHR()) {
-            $deptId = $this->managerDeptId();
-            if ($deptId) {
-                $query->where('employees.department_id', $deptId);
+            $myEmployeeId = auth()->user()->employee?->id;
+            if ($myEmployeeId) {
+                $query->where('employees.reporting_to', $myEmployeeId);
             }
         }
 

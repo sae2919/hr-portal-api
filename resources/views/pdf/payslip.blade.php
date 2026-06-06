@@ -205,7 +205,8 @@
         $masterGross = $structure->gross_salary ?? 0;
 
         // Actual earnings details
-        $actualBasic = $payroll->items->where('type', 'earning')->where('name', 'Basic Salary')->first()?->amount 
+        $actualBasic = $payroll->items->where('type', 'earning')->where('name', 'Stipend')->first()?->amount
+            ?? $payroll->items->where('type', 'earning')->where('name', 'Basic Salary')->first()?->amount 
             ?? $payroll->items->where('type', 'earning')->filter(fn($i) => str_contains(strtolower($i->name), 'basic'))->first()?->amount
             ?? $payroll->basic_salary ?? 0;
         
@@ -221,19 +222,27 @@
             ?? $payroll->items->where('type', 'earning')->filter(fn($i) => str_contains(strtolower($i->name), 'bonus'))->first()?->amount
             ?? 0;
             
-        // Earning rows
-        $leftRows = [
-            ['label' => 'Basic', 'master' => $masterBasic, 'actual' => $actualBasic],
-            ['label' => 'HRA', 'master' => $masterHra, 'actual' => $actualHra],
-            ['label' => 'Special Allowance', 'master' => $masterAllowances, 'actual' => $actualAllowances],
-        ];
-        
-        if ($masterBonus > 0 || $actualBonus > 0) {
-            $leftRows[] = ['label' => 'Bonus', 'master' => $masterBonus, 'actual' => $actualBonus];
+        $isIntern = ($employee->employment_type ?? null) === 'intern';
+
+        if ($isIntern) {
+            $leftRows = [
+                ['label' => 'Stipend', 'master' => $masterBasic, 'actual' => $actualBasic],
+            ];
+        } else {
+            // Earning rows
+            $leftRows = [
+                ['label' => 'Basic', 'master' => $masterBasic, 'actual' => $actualBasic],
+                ['label' => 'HRA', 'master' => $masterHra, 'actual' => $actualHra],
+                ['label' => 'Special Allowance', 'master' => $masterAllowances, 'actual' => $actualAllowances],
+            ];
+            
+            if ($masterBonus > 0 || $actualBonus > 0) {
+                $leftRows[] = ['label' => 'Bonus', 'master' => $masterBonus, 'actual' => $actualBonus];
+            }
         }
         
         // Dynamic earnings
-        $knownEarningNames = ['basic salary', 'basic', 'hra', 'allowances', 'special allowance', 'bonus'];
+        $knownEarningNames = ['basic salary', 'basic', 'hra', 'allowances', 'special allowance', 'bonus', 'stipend'];
         foreach ($payroll->items->where('type', 'earning') as $item) {
             $lowerName = strtolower($item->name);
             $isKnown = false;
@@ -250,16 +259,18 @@
 
         // Deduction rows
         $rightRows = [];
-        foreach ($payroll->items->where('type', 'deduction') as $item) {
-            $label = $item->name;
-            if (str_contains(strtolower($label), 'prof') || str_contains(strtolower($label), 'professional')) {
-                $label = 'Prof Tax';
+        if (!$isIntern) {
+            foreach ($payroll->items->where('type', 'deduction') as $item) {
+                $label = $item->name;
+                if (str_contains(strtolower($label), 'prof') || str_contains(strtolower($label), 'professional')) {
+                    $label = 'Prof Tax';
+                }
+                $rightRows[] = ['label' => $label, 'actual' => $item->amount];
             }
-            $rightRows[] = ['label' => $label, 'actual' => $item->amount];
-        }
-        
-        if (empty($rightRows)) {
-            $rightRows[] = ['label' => 'Prof Tax', 'actual' => 0];
+            
+            if (empty($rightRows)) {
+                $rightRows[] = ['label' => 'Prof Tax', 'actual' => 0];
+            }
         }
 
         // Row balancing

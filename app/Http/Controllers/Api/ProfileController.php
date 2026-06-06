@@ -12,19 +12,29 @@ class ProfileController extends Controller
         $isAdminOrHR = $user->hasRole('admin') || $user->hasRole('hr') || $user->hasRole('super_admin');
 
         $rules = [
-            'name'  => ['required', 'string', 'max:100'],
             'phone' => ['nullable', 'string', 'max:20'],
         ];
 
         if ($isAdminOrHR) {
+            $rules['name'] = ['required', 'string', 'max:100'];
             $rules['email'] = ['required', 'email', "unique:users,email,{$user->id}"];
+        } else {
+            if ($request->has('name') && $request->name !== $user->name) {
+                return response()->json([
+                    'message' => 'Name cannot be changed by the employee.',
+                    'errors' => ['name' => ['Name cannot be changed by the employee.']]
+                ], 422);
+            }
         }
 
         $request->validate($rules);
 
-        $updateData = $request->only('name', 'phone');
-        if ($isAdminOrHR && $request->has('email')) {
-            $updateData['email'] = $request->email;
+        $updateData = $request->only('phone');
+        if ($isAdminOrHR) {
+            $updateData['name'] = $request->name;
+            if ($request->has('email')) {
+                $updateData['email'] = $request->email;
+            }
         }
 
         $user->update($updateData);

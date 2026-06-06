@@ -116,16 +116,17 @@ try {
     // Detailed items
     $payroll = \App\Models\Payroll::with('items')->where('employee_id', $employee->id)->where('month', 5)->where('year', 2026)->first();
     
+    $daysInMonth = 31; // May has 31 days
     echo "\n--- CALCULATION RESULTS ---\n";
     echo "Response Status: " . $response->getStatusCode() . "\n";
     echo "Month/Year: " . $data['month'] . "/" . $data['year'] . "\n";
-    echo "Working Days: " . $data['working_days'] . "\n";
-    echo "Present Days: " . $data['present_days'] . "\n";
-    echo "LOP Days: " . $data['lop_days'] . "\n";
+    echo "Working Days (Calendar Days): " . $data['working_days'] . " (Expected: 31)\n";
+    echo "Present Days (Paid Days): " . $data['present_days'] . " (Expected: 27)\n";
+    echo "LOP Days: " . $data['lop_days'] . " (Expected: 4)\n";
     echo "Base Gross Salary: ₹25,000.00\n";
-    echo "Calculated LOP Deduction (Gross-Based): ₹" . $payroll->lop_deduction . " (Expected: 25000 * 4 / " . $workingDays . " = ₹" . round(25000 * 4 / $workingDays, 2) . ")\n";
-    echo "Total Deductions: ₹" . $data['total_deductions'] . "\n";
-    echo "Net Salary: ₹" . $data['net_salary'] . "\n";
+    echo "Calculated LOP Deduction (Gross-Based): ₹" . $payroll->lop_deduction . " (Expected: 25000 * 4 / 31 = ₹" . round(25000 * 4 / 31, 2) . ")\n";
+    echo "Total Deductions: ₹" . $data['total_deductions'] . " (Expected: PF + PT = 1306.45 + 200.00 = 1506.45)\n";
+    echo "Net Salary: ₹" . $data['net_salary'] . " (Expected: Revised Gross - Deductions = 21774.19 - 1506.45 = 20267.74)\n";
     
     echo "\nPayroll Items stored in database:\n";
     foreach ($payroll->items as $item) {

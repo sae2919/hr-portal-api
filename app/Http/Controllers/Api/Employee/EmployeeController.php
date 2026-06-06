@@ -53,18 +53,15 @@ class EmployeeController extends Controller
             if ($request->filled('employment_type')) $query->where('employment_type', $request->employment_type);
             if ($request->filled('reporting_to')) $query->where('reporting_to', $request->reporting_to);
         } elseif ($this->isManager()) {
-            $deptId = $this->managerDeptId();
             $employeeId = $user->employee?->id;
-
-            $query->where(function ($q) use ($deptId, $employeeId) {
-                if ($deptId) {
-                    $q->where('department_id', $deptId);
-                }
-                if ($employeeId) {
-                    $q->orWhere('reporting_to', $employeeId)
+            if ($employeeId) {
+                $query->where(function ($q) use ($employeeId) {
+                    $q->where('reporting_to', $employeeId)
                       ->orWhere('id', $employeeId);
-                }
-            });
+                });
+            } else {
+                $query->whereRaw('0 = 1');
+            }
 
             if ($request->filled('search')) {
                 $query->where(function ($q) use ($request) {
@@ -215,7 +212,8 @@ class EmployeeController extends Controller
         if ($this->isAdminOrHR()) {
             // full access
         } elseif ($this->isManager()) {
-            if ($employee->department_id !== $this->managerDeptId()) {
+            $myEmployeeId = $user->employee?->id;
+            if ($employee->id !== $myEmployeeId && $employee->reporting_to !== $myEmployeeId) {
                 return response()->json(['message' => 'Unauthorized.'], 403);
             }
         } else {
@@ -232,11 +230,49 @@ class EmployeeController extends Controller
     // ── Update ────────────────────────────────────────────────────
     public function update(Request $request, Employee $employee): JsonResponse
     {
-        if (!$this->isAdminOrHR()) {
+        $isSelf = auth()->user()->employee?->id === $employee->id;
+
+        if (!$this->isAdminOrHR() && !$isSelf) {
             return response()->json(['message' => 'Unauthorized.'], 403);
         }
 
-        $validator = \Illuminate\Support\Facades\Validator::make($request->all(), [
+        $updateData = $request->all();
+
+        if (!$this->isAdminOrHR() && $isSelf) {
+            // Prevent email change
+            if ($request->has('email') && $request->email !== $employee->email) {
+                return response()->json([
+                    'message' => 'Email cannot be changed by the employee.',
+                    'errors' => ['email' => ['Email cannot be changed by the employee.']]
+                ], 422);
+            }
+
+            // Prevent first name change
+            if ($request->has('first_name') && $request->first_name !== $employee->first_name) {
+                return response()->json([
+                    'message' => 'First name cannot be changed by the employee.',
+                    'errors' => ['first_name' => ['First name cannot be changed by the employee.']]
+                ], 422);
+            }
+
+            // Prevent last name change
+            if ($request->has('last_name') && $request->last_name !== $employee->last_name) {
+                return response()->json([
+                    'message' => 'Last name cannot be changed by the employee.',
+                    'errors' => ['last_name' => ['Last name cannot be changed by the employee.']]
+                ], 422);
+            }
+
+            // Only allow editing personal information and emergency contact (excluding name/email)
+            $allowedFields = [
+                'phone', 'gender', 'blood_group', 'dob',
+                'address', 'city', 'state', 'country', 'pincode',
+                'emergency_contact_name', 'emergency_contact_phone', 'emergency_contact_relation'
+            ];
+            $updateData = $request->only($allowedFields);
+        }
+
+        $validator = \Illuminate\Support\Facades\Validator::make($updateData, [
             'first_name' => ['sometimes', 'string', 'max:100'],
             'last_name' => ['sometimes', 'string', 'max:100'],
             'email' => ['sometimes', 'email', "unique:employees,email,{$employee->id}"],
@@ -293,10 +329,10 @@ class EmployeeController extends Controller
         }
 
         $oldEmail = $employee->email;
-        $employee->update($request->all());
+        $employee->update($updateData);
 
         // If email was changed, sync it to the associated user login record
-        if ($request->has('email') && $employee->email !== $oldEmail && $employee->user) {
+        if (isset($updateData['email']) && $employee->email !== $oldEmail && $employee->user) {
             $employee->user->update([
                 'email' => $employee->email
             ]);

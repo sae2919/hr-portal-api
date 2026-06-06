@@ -95,13 +95,67 @@ class SalaryRevisionController extends Controller
         $newBonus = (float) $request->new_bonus;
         $newGross = $newBasic + $newHra + $newAllowances + $newBonus;
 
-        // Deductions copy from old structure, or default to 0
-        $pfDeduction = $currentStructure ? (float) $currentStructure->pf_deduction : 0.0;
+        // Fetch employee to read their settings (PF %, state for PT)
+        $emp = Employee::with('user')->findOrFail($employeeId);
+
+        // 1. Recalculate PF Deduction
+        $pfPercentage = (int) ($emp->pf_percentage ?? 0);
+        $pfDeduction = round(($newBasic * $pfPercentage) / 100);
+
+        // 2. Recalculate ESI
+        $esiEmployee = 0.0;
+        $esiEmployer = 0.0;
+        $hasEsi = ($emp->esi_employee > 0 || ($currentStructure && $currentStructure->esi_employee > 0));
+        if ($hasEsi && $newGross <= 21000) {
+            $esiEmployee = round($newGross * 0.0075);
+            $esiEmployer = round($newGross * 0.0325);
+        }
+
+        // 3. Recalculate PT
+        $ptState = $emp->pt_state;
+        $ptAmount = 0.0;
+        if ($ptState) {
+            if ($ptState === 'Andhra Pradesh' || $ptState === 'Telangana' || $ptState === 'Karnataka') {
+                $ptAmount = ($newGross <= 15000) ? 0 : 200;
+                if ($ptState === 'Karnataka' && $newGross > 15000 && $newGross <= 25000) {
+                    $ptAmount = 150;
+                }
+            } elseif ($ptState === 'Maharashtra') {
+                if ($newGross <= 7500) $ptAmount = 0;
+                elseif ($newGross <= 10000) $ptAmount = 175;
+                else $ptAmount = 200;
+            } elseif ($ptState === 'Tamil Nadu') {
+                $ptAmount = ($newGross <= 21000) ? 0 : 208;
+            } elseif ($ptState === 'West Bengal') {
+                if ($newGross <= 10000) $ptAmount = 0;
+                elseif ($newGross <= 15000) $ptAmount = 110;
+                elseif ($newGross <= 25000) $ptAmount = 130;
+                elseif ($newGross <= 40000) $ptAmount = 150;
+                else $ptAmount = 200;
+            } elseif ($ptState === 'Gujarat') {
+                if ($newGross <= 5999) $ptAmount = 0;
+                elseif ($newGross <= 8999) $ptAmount = 80;
+                elseif ($newGross <= 11999) $ptAmount = 150;
+                else $ptAmount = 200;
+            } elseif ($ptState === 'Madhya Pradesh') {
+                $ptAmount = ($newGross <= 18750) ? 0 : 208;
+            } elseif ($ptState === 'Kerala') {
+                if ($newGross <= 11999) $ptAmount = 0;
+                elseif ($newGross <= 17999) $ptAmount = 120;
+                elseif ($newGross <= 29999) $ptAmount = 180;
+                else $ptAmount = 208;
+            } else {
+                $ptAmount = (float) ($emp->pt_amount ?? 0);
+            }
+        }
+
+        // 4. TDS and Other Deductions copy from old structure, or default to 0
         $taxDeduction = $currentStructure ? (float) $currentStructure->tax_deduction : 0.0;
         $otherDeductions = $currentStructure ? (float) $currentStructure->other_deductions : 0.0;
 
-        $newDeductions = $pfDeduction + $taxDeduction + $otherDeductions;
+        $newDeductions = $pfDeduction + $taxDeduction + $otherDeductions + $esiEmployee + $ptAmount;
         $newNet = max(0, $newGross - $newDeductions);
+        $newCtc = $newGross * 12 + $esiEmployer * 12;
 
         // Calculate increment percentage
         $incrementPercentage = 0.0;
@@ -112,14 +166,14 @@ class SalaryRevisionController extends Controller
         $revision = null;
 
         DB::transaction(function () use (
-            $employeeId, $oldBasic, $oldHra, $oldAllowances, $oldBonus, $oldGross, $oldNet,
-            $newBasic, $newHra, $newAllowances, $newBonus, $newGross, $newNet,
-            $incrementPercentage, $effectiveDate, $request,
-            $pfDeduction, $taxDeduction, $otherDeductions, &$revision
+            $emp, $oldBasic, $oldHra, $oldAllowances, $oldBonus, $oldGross, $oldNet,
+            $newBasic, $newHra, $newAllowances, $newBonus, $newGross, $newNet, $newCtc,
+            $pfDeduction, $esiEmployee, $esiEmployer, $ptAmount, $taxDeduction, $otherDeductions,
+            $incrementPercentage, $effectiveDate, $request, &$revision
         ) {
             // 1. Create SalaryRevision record
             $revision = SalaryRevision::create([
-                'employee_id'          => $employeeId,
+                'employee_id'          => $emp->id,
                 'old_basic_salary'     => $oldBasic,
                 'old_hra'              => $oldHra,
                 'old_allowances'       => $oldAllowances,
@@ -138,38 +192,74 @@ class SalaryRevisionController extends Controller
                 'approved_by'          => auth()->id(),
             ]);
 
-            // 2. Update employee designation if new_designation_id is provided
+            // 2. Update employee designation and other fields if new_designation_id is provided
             if ($request->filled('new_designation_id')) {
-                $emp = Employee::find($employeeId);
-                if ($emp) {
-                    if (strcasecmp($request->reason, 'Promotion') === 0) {
-                        $emp->previous_designation_id = $emp->designation_id;
+                if (strcasecmp($request->reason, 'Promotion') === 0) {
+                    $emp->previous_designation_id = $emp->designation_id;
+                }
+                $emp->designation_id = $request->new_designation_id;
+
+                $newDesignation = \App\Models\Designation::find($request->new_designation_id);
+                if ($newDesignation) {
+                    $title = strtolower($newDesignation->title);
+
+                    // A. Transition from intern to full_time if new designation is not an intern
+                    if ($emp->employment_type === 'intern' && stripos($title, 'intern') === false) {
+                        $emp->employment_type = 'full_time';
                     }
-                    $emp->designation_id = $request->new_designation_id;
-                    $emp->save();
+
+                    // B. Auto-update position_level and user roles based on designation keywords
+                    $resolvedPositionLevel = 'staff';
+                    $resolvedRole = 'employee';
+
+                    if (preg_match('/\b(ceo|founder|president|co-founder|co_founder|cto|cfo|coo|chief)\b/', $title)) {
+                        $resolvedPositionLevel = 'c_level';
+                        $resolvedRole = 'admin';
+                    } elseif (preg_match('/\b(manager|director)\b/', $title)) {
+                        $resolvedPositionLevel = 'manager';
+                        $resolvedRole = 'manager';
+                    } elseif (preg_match('/\b(lead|head|supervisor)\b/', $title)) {
+                        $resolvedPositionLevel = 'team_lead';
+                        $resolvedRole = 'team_lead';
+                    }
+
+                    $emp->position_level = $resolvedPositionLevel;
+
+                    // Sync with linked User record
+                    if ($emp->user) {
+                        $emp->user->role = $resolvedRole;
+                        $emp->user->save();
+
+                        // Sync Spatie role
+                        $emp->user->syncRoles([$resolvedRole]);
+                    }
                 }
             }
 
-            // Sync the revised salary fields directly to the employees table columns
-            DB::table('employees')->where('id', $employeeId)->update([
-                'basic_salary'     => $newBasic,
-                'hra'              => $newHra,
-                'allowances'       => json_encode([['type' => 'other', 'amount' => $newAllowances]]),
-                'bonus'            => $newBonus,
-                'pf_deduction'     => $pfDeduction,
-                'tds_amount'       => $taxDeduction,
-                'other_deductions' => $otherDeductions,
-                'ctc'              => $newGross * 12,
-            ]);
+            // Sync the revised salary fields directly to the employee model properties
+            $emp->basic_salary = $newBasic;
+            $emp->hra = $newHra;
+            $emp->allowances = [['type' => 'other', 'amount' => $newAllowances]];
+            $emp->bonus = $newBonus;
+            $emp->pf_deduction = $pfDeduction;
+            $emp->esi_employee = $esiEmployee;
+            $emp->esi_employer = $esiEmployer;
+            $emp->pt_amount = $ptAmount;
+            $emp->tds_amount = $taxDeduction;
+            $emp->other_deductions = $otherDeductions;
+            $emp->ctc = $newCtc;
+
+            // Save quietly to prevent triggering saved event (avoid duplicate active SalaryStructure)
+            $emp->saveQuietly();
 
             // 3. Mark old active structures as inactive
-            SalaryStructure::where('employee_id', $employeeId)
+            SalaryStructure::where('employee_id', $emp->id)
                 ->where('status', 'active')
                 ->update(['status' => 'inactive']);
 
-            // 3. Create a new active SalaryStructure
+            // 4. Create a new active SalaryStructure
             SalaryStructure::create([
-                'employee_id'      => $employeeId,
+                'employee_id'      => $emp->id,
                 'basic_salary'     => $newBasic,
                 'hra'              => $newHra,
                 'allowances'       => $newAllowances,

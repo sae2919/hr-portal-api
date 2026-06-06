@@ -299,6 +299,9 @@ class PayrollController extends Controller
         $month      = (int) $request->month;
         $year       = (int) $request->year;
 
+        $employee = \App\Models\Employee::findOrFail($employeeId);
+        $isIntern = $employee->employment_type === 'intern';
+
         // Check if payroll already exists
         if (Payroll::where('employee_id', $employeeId)
             ->where('month', $month)
@@ -381,27 +384,33 @@ class PayrollController extends Controller
         $structurePtAmount  = (float) ($salary->tax_deduction ?? 0);
         $ptAmount           = $request->has('pt_amount') ? (float) $request->pt_amount : $structurePtAmount;
 
-        $dailyRate    = $workingDays > 0 ? $grossSalary / $workingDays : 0;
+        $daysInMonth  = $startOfMonth->daysInMonth;
+        $dailyRate    = $daysInMonth > 0 ? $grossSalary / $daysInMonth : 0;
         $lopDeduction = round($dailyRate * $lopDays, 2);
 
-        // Calculate prorated Basic for PF calculation purposes
-        $attendanceFactor = $workingDays > 0 ? ($workingDays - $lopDays) / $workingDays : 0;
+        // Calculate prorated earnings components based on calendar-day attendance factor
+        $attendanceFactor = $daysInMonth > 0 ? ($daysInMonth - $lopDays) / $daysInMonth : 0;
         $proratedBasic = round($basic * $attendanceFactor, 2);
+        $proratedHra = round($hra * $attendanceFactor, 2);
+        $proratedAllowances = round($allowances * $attendanceFactor, 2);
+        $proratedBonus = round($bonus * $attendanceFactor, 2);
+        $revisedGross = round($grossSalary - $lopDeduction, 2);
 
-        $pfDeduction     = $request->input('include_pf', true) ? round($proratedBasic * $pfPercentage / 100, 2) : 0;
-        $taxDeduction    = $request->input('include_pt', true) ? $ptAmount : 0;
-        $otherDeductions = (float) $salary->other_deductions;
+        $pfDeduction     = ($isIntern || !$request->input('include_pf', true)) ? 0 : round($proratedBasic * $pfPercentage / 100, 2);
+        $taxDeduction    = ($isIntern || !$request->input('include_pt', true)) ? 0 : $ptAmount;
+        $otherDeductions = $isIntern ? 0 : (float) $salary->other_deductions;
 
-        $totalDeductions = $pfDeduction + $taxDeduction + $otherDeductions + $lopDeduction;
-        $netSalary       = round($grossSalary - $totalDeductions, 2);
+        // Total deductions exclude LOP deduction since it's already deducted from revised gross
+        $totalDeductions = $pfDeduction + $taxDeduction + $otherDeductions;
+        $netSalary       = round($revisedGross - $totalDeductions, 2);
 
         // Create payroll record
         DB::transaction(function () use (
-            $employeeId, $salary, $month, $year,
-            $workingDays, $presentDays, $totalLeaveDays, $lopDays,
+            $employeeId, $salary, $month, $year, $isIntern,
+            $daysInMonth, $presentDays, $totalLeaveDays, $lopDays,
             $paidLeaveDays, $unpaidLeaveDays, $absentDays,
-            $grossSalary, $totalDeductions, $netSalary,
-            $basic, $hra, $allowances, $bonus,
+            $revisedGross, $totalDeductions, $netSalary,
+            $proratedBasic, $proratedHra, $proratedAllowances, $proratedBonus,
             $pfDeduction, $pfPercentage, $taxDeduction, $ptAmount, $otherDeductions, $lopDeduction
         ) {
             $payroll = Payroll::create([
@@ -409,13 +418,13 @@ class PayrollController extends Controller
                 'salary_structure_id' => $salary->id,
                 'month'               => $month,
                 'year'                => $year,
-                'working_days'        => $workingDays,
-                'present_days'        => $presentDays,
+                'working_days'        => $daysInMonth,
+                'present_days'        => $daysInMonth - $lopDays,
                 'leave_days'          => $totalLeaveDays,
                 'lop_days'            => $lopDays,
                 'lop_deduction'       => $lopDeduction,
-                'basic_salary'        => $basic,
-                'gross_salary'        => $grossSalary,
+                'basic_salary'        => $proratedBasic,
+                'gross_salary'        => $revisedGross,
                 'total_deductions'    => $totalDeductions,
                 'net_salary'          => $netSalary,
                 'status'              => 'processed',
@@ -423,24 +432,26 @@ class PayrollController extends Controller
             ]);
 
             // Create payroll items
-            $items = [
-                ['name' => 'Basic Salary', 'type' => 'earning', 'amount' => $basic],
-                ['name' => 'HRA',          'type' => 'earning', 'amount' => $hra],
-                ['name' => 'Allowances',   'type' => 'earning', 'amount' => $allowances],
-            ];
+            if ($isIntern) {
+                $items = [
+                    ['name' => 'Stipend', 'type' => 'earning', 'amount' => $proratedBasic],
+                ];
+            } else {
+                $items = [
+                    ['name' => 'Basic Salary', 'type' => 'earning', 'amount' => $proratedBasic],
+                    ['name' => 'HRA',          'type' => 'earning', 'amount' => $proratedHra],
+                    ['name' => 'Allowances',   'type' => 'earning', 'amount' => $proratedAllowances],
+                ];
+            }
             
-            if ($bonus > 0)          
-                $items[] = ['name' => 'Bonus', 'type' => 'earning', 'amount' => $bonus];
+            if ($proratedBonus > 0)          
+                $items[] = ['name' => 'Bonus', 'type' => 'earning', 'amount' => $proratedBonus];
             if ($pfDeduction > 0)    
                 $items[] = ['name' => "Provident Fund ({$pfPercentage}%)", 'type' => 'deduction', 'amount' => $pfDeduction];
             if ($taxDeduction > 0)   
                 $items[] = ['name' => "Professional Tax (₹{$ptAmount})", 'type' => 'deduction', 'amount' => $taxDeduction];
             if ($otherDeductions > 0)
                 $items[] = ['name' => 'Other Deductions', 'type' => 'deduction', 'amount' => $otherDeductions];
-            if ($unpaidLeaveDays > 0)
-                $items[] = ['name' => "Unpaid Leave ({$unpaidLeaveDays} days)", 'type' => 'deduction', 'amount' => round(($lopDeduction / max($lopDays, 1)) * $unpaidLeaveDays, 2)];
-            if ($absentDays > 0)     
-                $items[] = ['name' => "Absent / LOP ({$absentDays} days)", 'type' => 'deduction', 'amount' => round(($lopDeduction / max($lopDays, 1)) * $absentDays, 2)];
 
             foreach ($items as $item) {
                 PayrollItem::create([
@@ -456,13 +467,13 @@ class PayrollController extends Controller
             'message'           => 'Payroll generated successfully.',
             'month'             => $month,
             'year'              => $year,
-            'working_days'      => $workingDays,
-            'present_days'      => $presentDays,
+            'working_days'      => $daysInMonth,
+            'present_days'      => $daysInMonth - $lopDays,
             'paid_leave_days'   => $paidLeaveDays,
             'unpaid_leave_days' => $unpaidLeaveDays,
             'absent_days'       => $absentDays,
             'lop_days'          => $lopDays,
-            'gross_salary'      => $grossSalary,
+            'gross_salary'      => $revisedGross,
             'pf_percentage'     => $pfPercentage,
             'pt_amount'         => $taxDeduction,
             'total_deductions'  => $totalDeductions,
@@ -645,5 +656,26 @@ class PayrollController extends Controller
             });
 
         return response()->json($breakdown);
+    }
+
+    /**
+     * Delete a payroll record (Admin only)
+     */
+    public function destroy(Payroll $payroll): JsonResponse
+    {
+        if (auth()->user()->role !== 'admin') {
+            return response()->json(['message' => 'Unauthorized.'], 403);
+        }
+
+        if ($payroll->status === 'paid') {
+            return response()->json(['message' => 'Cannot delete a paid payroll record.'], 422);
+        }
+
+        DB::transaction(function () use ($payroll) {
+            $payroll->items()->delete();
+            $payroll->delete();
+        });
+
+        return response()->json(['message' => 'Payroll record deleted successfully.']);
     }
 }

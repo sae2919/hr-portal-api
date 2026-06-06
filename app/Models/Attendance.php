@@ -17,11 +17,13 @@ class Attendance extends Model
         'status',
         'overtime_hours',
         'note',
+        'is_posted',
     ];
 
     protected $casts = [
         'date'           => 'date',
         'overtime_hours' => 'decimal:2',
+        'is_posted'      => 'boolean',
     ];
 
     public function employee()

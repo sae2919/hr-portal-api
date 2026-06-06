@@ -23,6 +23,10 @@ class SalaryRevision extends Model
         'new_bonus',
         'new_gross_salary',
         'new_net_salary',
+        'old_employment_type',
+        'new_employment_type',
+        'old_designation_id',
+        'new_designation_id',
         'increment_percentage',
         'effective_date',
         'reason',
@@ -42,5 +46,15 @@ class SalaryRevision extends Model
     public function approver()
     {
         return $this->belongsTo(User::class, 'approved_by');
+    }
+
+    public function oldDesignation()
+    {
+        return $this->belongsTo(Designation::class, 'old_designation_id');
+    }
+
+    public function newDesignation()
+    {
+        return $this->belongsTo(Designation::class, 'new_designation_id');
     }
 }

@@ -17,6 +17,18 @@ class LeaveBalanceResource extends JsonResource
                 'id'    => $this->leaveType->id,
                 'name'  => $this->leaveType->name,
                 'color' => $this->leaveType->color,
+                'code'  => $this->leaveType->code,
+            ]),
+            'employee'       => $this->whenLoaded('employee', fn() => [
+                'id'            => $this->employee->id,
+                'first_name'    => $this->employee->first_name,
+                'last_name'     => $this->employee->last_name,
+                'full_name'     => $this->employee->full_name,
+                'employee_code' => $this->employee->employee_code,
+                'department'    => $this->employee->department ? [
+                    'id'   => $this->employee->department->id,
+                    'name' => $this->employee->department->name,
+                ] : null,
             ]),
             'year'           => $this->year,
             'total_days'     => $this->total_days,

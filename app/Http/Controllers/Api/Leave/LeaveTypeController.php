@@ -41,7 +41,13 @@ class LeaveTypeController extends Controller
     {
         $request->validate([
             'name'          => ['required', 'string', "unique:leave_types,name,{$leaveType->id}"],
+            'code'          => ['required', 'string', "unique:leave_types,code,{$leaveType->id}"],
             'days_per_year' => ['required', 'integer', 'min:0'],
+            'carry_forward' => ['boolean'],
+            'is_paid'       => ['boolean'],
+            'color'         => ['nullable', 'string'],
+            'description'   => ['nullable', 'string'],
+            'status'        => ['sometimes', 'string', 'in:active,inactive'],
         ]);
 
         $leaveType->update($request->all());

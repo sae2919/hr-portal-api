@@ -5,7 +5,7 @@
     <title>Payslip</title>
     <style>
         body {
-            font-family: DejaVu Sans, sans-serif;
+            font-family: 'Times New Roman', Times, 'DejaVu Serif', serif;
             font-size: 11px;
             color: #000;
             line-height: 1.4;
@@ -35,7 +35,7 @@
         }
         
         .company-details-cell {
-            width: 85%;
+            width: 70%;
             text-align: center;
             vertical-align: middle;
         }
@@ -111,7 +111,7 @@
             border: 1px solid #777;
             padding: 5px 8px;
             font-weight: bold;
-            text-align: left;
+            text-align: center;
             background-color: #fff;
         }
         
@@ -373,6 +373,7 @@
                 <h1 class="company-name">{{ $companyName }}</h1>
                 <p class="company-address">{{ $companyAddress }}</p>
             </td>
+            <td style="width: 15%; border: none;"></td>
         </tr>
     </table>
 
@@ -384,52 +385,56 @@
     <table class="employee-details-table">
         <tr>
             <td class="col-left">
-                <div class="info-row">
-                    <span class="info-label">Name:</span>
-                    <span class="info-value">{{ $employee->first_name }} {{ $employee->last_name }}</span>
-                </div>
-                <div class="info-row">
-                    <span class="info-label">Joining Date:</span>
-                    <span class="info-value">{{ $employee->joining_date ? $employee->joining_date->format('d M Y') : '-' }}</span>
-                </div>
-                <div class="info-row">
-                    <span class="info-label">Designation:</span>
-                    <span class="info-value">{{ $employee->designation->title ?? '-' }}</span>
-                </div>
-                <div class="info-row">
-                    <span class="info-label">Department:</span>
-                    <span class="info-value">{{ $employee->department->name ?? '-' }}</span>
-                </div>
-                <div class="info-row">
-                    <span class="info-label">Location:</span>
-                    <span class="info-value">{{ $employee->city ?: 'Hyderabad' }}</span>
-                </div>
+                <table style="width: 100%; border-collapse: collapse; border: none;">
+                    <tr>
+                        <td style="width: 35%; padding: 2px 0; border: none; font-weight: normal; font-size: 11px;">Name:</td>
+                        <td style="width: 65%; padding: 2px 0; border: none; font-weight: normal; font-size: 11px;">{{ $employee->first_name }} {{ $employee->last_name }}</td>
+                    </tr>
+                    <tr>
+                        <td style="width: 35%; padding: 2px 0; border: none; font-weight: normal; font-size: 11px;">Joining Date:</td>
+                        <td style="width: 65%; padding: 2px 0; border: none; font-weight: normal; font-size: 11px;">{{ $employee->joining_date ? $employee->joining_date->format('d M Y') : '-' }}</td>
+                    </tr>
+                    <tr>
+                        <td style="width: 35%; padding: 2px 0; border: none; font-weight: normal; font-size: 11px;">Designation:</td>
+                        <td style="width: 65%; padding: 2px 0; border: none; font-weight: normal; font-size: 11px;">{{ $employee->designation->title ?? '-' }}</td>
+                    </tr>
+                    <tr>
+                        <td style="width: 35%; padding: 2px 0; border: none; font-weight: normal; font-size: 11px;">Department:</td>
+                        <td style="width: 65%; padding: 2px 0; border: none; font-weight: normal; font-size: 11px;">{{ $employee->department->name ?? '-' }}</td>
+                    </tr>
+                    <tr>
+                        <td style="width: 35%; padding: 2px 0; border: none; font-weight: normal; font-size: 11px;">Location:</td>
+                        <td style="width: 65%; padding: 2px 0; border: none; font-weight: normal; font-size: 11px;">{{ $employee->city ?: 'Hyderabad' }}</td>
+                    </tr>
+                </table>
             </td>
             <td class="col-right">
-                <div class="info-row">
-                    <span class="info-label">Employee ID:</span>
-                    <span class="info-value">{{ $employee->employee_code }}</span>
-                </div>
-                <div class="info-row">
-                    <span class="info-label">Bank Name:</span>
-                    <span class="info-value">{{ $bankName }}</span>
-                </div>
-                <div class="info-row">
-                    <span class="info-label">Bank Account No:</span>
-                    <span class="info-value">{{ $maskedAcc }}</span>
-                </div>
-                <div class="info-row">
-                    <span class="info-label">PAN Number:</span>
-                    <span class="info-value">{{ $maskedPan }}</span>
-                </div>
-                <div class="info-row">
-                    <span class="info-label">Effective Work Days:</span>
-                    <span class="info-value">{{ $payroll->present_days }}</span>
-                </div>
-                <div class="info-row">
-                    <span class="info-label">LOP:</span>
-                    <span class="info-value">{{ $payroll->lop_days ?? 0 }}</span>
-                </div>
+                <table style="width: 100%; border-collapse: collapse; border: none;">
+                    <tr>
+                        <td style="width: 45%; padding: 2px 0; border: none; font-weight: normal; font-size: 11px;">Employee ID:</td>
+                        <td style="width: 55%; padding: 2px 0; border: none; font-weight: normal; font-size: 11px;">{{ $employee->employee_code }}</td>
+                    </tr>
+                    <tr>
+                        <td style="width: 45%; padding: 2px 0; border: none; font-weight: normal; font-size: 11px;">Bank Name:</td>
+                        <td style="width: 55%; padding: 2px 0; border: none; font-weight: normal; font-size: 11px;">{{ $bankName }}</td>
+                    </tr>
+                    <tr>
+                        <td style="width: 45%; padding: 2px 0; border: none; font-weight: normal; font-size: 11px;">Bank Account No:</td>
+                        <td style="width: 55%; padding: 2px 0; border: none; font-weight: normal; font-size: 11px;">{{ $maskedAcc }}</td>
+                    </tr>
+                    <tr>
+                        <td style="width: 45%; padding: 2px 0; border: none; font-weight: normal; font-size: 11px;">PAN Number:</td>
+                        <td style="width: 55%; padding: 2px 0; border: none; font-weight: normal; font-size: 11px;">{{ $maskedPan }}</td>
+                    </tr>
+                    <tr>
+                        <td style="width: 45%; padding: 2px 0; border: none; font-weight: normal; font-size: 11px;">Effective Work Days:</td>
+                        <td style="width: 55%; padding: 2px 0; border: none; font-weight: normal; font-size: 11px;">{{ $payroll->present_days }}</td>
+                    </tr>
+                    <tr>
+                        <td style="width: 45%; padding: 2px 0; border: none; font-weight: normal; font-size: 11px;">LOP:</td>
+                        <td style="width: 55%; padding: 2px 0; border: none; font-weight: normal; font-size: 11px;">{{ $payroll->lop_days ?? 0 }}</td>
+                    </tr>
+                </table>
             </td>
         </tr>
     </table>
@@ -439,10 +444,10 @@
         <thead>
             <tr>
                 <th style="width: 35%;">Earnings</th>
-                <th style="width: 15%; text-align: right;">Master</th>
-                <th style="width: 15%; text-align: right;">Actual</th>
+                <th style="width: 15%;">Master</th>
+                <th style="width: 15%;">Actual</th>
                 <th style="width: 20%;">Deductions</th>
-                <th style="width: 15%; text-align: right;">Actual</th>
+                <th style="width: 15%;">Actual</th>
             </tr>
         </thead>
         <tbody>

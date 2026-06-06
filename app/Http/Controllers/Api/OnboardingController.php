@@ -79,7 +79,29 @@ class OnboardingController extends Controller
             'department' => 'required|string|max:255',
             'joining_date' => 'required|date',
             'ctc' => 'nullable|numeric|min:0',
+            'onboarding_type' => 'nullable|in:full_time,intern,free_intern',
+            'custom_heading' => 'nullable|string|max:255',
+            'required_documents' => 'nullable|array',
+            'optional_documents' => 'nullable|array',
+            'custom_document_labels' => 'nullable|array',
         ]);
+        
+        $onboardingType = $request->onboarding_type ?: 'full_time';
+        $requiredDocs = $request->required_documents;
+        $optionalDocs = $request->optional_documents;
+        
+        if (is_null($requiredDocs) || is_null($optionalDocs)) {
+            if ($onboardingType === 'free_intern') {
+                $requiredDocs = $requiredDocs ?? ['resume', 'id_proof', 'address_proof', 'degree', 'aadhaar_card'];
+                $optionalDocs = $optionalDocs ?? ['passport'];
+            } elseif ($onboardingType === 'intern') {
+                $requiredDocs = $requiredDocs ?? ['resume', 'id_proof', 'address_proof', 'degree', 'bank_details', 'pan_card', 'aadhaar_card'];
+                $optionalDocs = $optionalDocs ?? ['passport'];
+            } else { // full_time
+                $requiredDocs = $requiredDocs ?? ['resume', 'id_proof', 'address_proof', 'degree', 'bank_details', 'pan_card', 'aadhaar_card'];
+                $optionalDocs = $optionalDocs ?? ['payslips', 'experience_letter', 'passport'];
+            }
+        }
         
         DB::beginTransaction();
         
@@ -95,6 +117,11 @@ class OnboardingController extends Controller
                 'ctc' => $request->ctc,
                 'status' => 'pending',
                 'created_by' => $user->id,
+                'onboarding_type' => $onboardingType,
+                'custom_heading' => $request->custom_heading,
+                'required_documents' => $requiredDocs,
+                'optional_documents' => $optionalDocs,
+                'custom_document_labels' => $request->custom_document_labels,
             ]);
             
             // Create default onboarding tasks
@@ -177,10 +204,17 @@ class OnboardingController extends Controller
             'department' => 'sometimes|string|max:255',
             'joining_date' => 'sometimes|date',
             'ctc' => 'nullable|numeric|min:0',
+            'onboarding_type' => 'sometimes|in:full_time,intern,free_intern',
+            'custom_heading' => 'nullable|string|max:255',
+            'required_documents' => 'nullable|array',
+            'optional_documents' => 'nullable|array',
+            'custom_document_labels' => 'nullable|array',
         ]);
         
         $onboardingRequest->update($request->only([
-            'candidate_name', 'phone', 'position', 'department', 'joining_date', 'ctc'
+            'candidate_name', 'phone', 'position', 'department', 'joining_date', 'ctc',
+            'onboarding_type', 'custom_heading', 'required_documents', 'optional_documents',
+            'custom_document_labels'
         ]));
         
         return response()->json([
@@ -307,6 +341,7 @@ class OnboardingController extends Controller
                 'department' => $onboardingRequest->department,
                 'designation' => $onboardingRequest->position,
                 'joining_date' => $onboardingRequest->joining_date,
+                'employment_type' => ($onboardingRequest->onboarding_type === 'full_time') ? 'full_time' : 'intern',
                 'status' => 'active',
                 'dob' => $personal['dob'] ?? null,
                 'gender' => $personal['gender'] ?? null,

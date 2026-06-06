@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api\Leave;
 
 use App\Http\Controllers\Controller;
 use App\Http\Resources\LeaveBalanceResource;
+use App\Http\Resources\EmployeeLeaveBalancesResource;
 use App\Models\Employee;
 use App\Models\LeaveBalance;
 use App\Models\LeaveType;
@@ -14,24 +15,76 @@ use Carbon\Carbon;
 class LeaveBalanceController extends Controller
 {
     public function index(Request $request)
-{
-    $user = auth()->user();
-    $isAdmin = $user->role === 'admin' || $user->tokenCan('manage leaves');
+    {
+        $user = auth()->user();
+        $isAdmin = $user->role === 'admin' || $user->tokenCan('manage leaves');
 
-    // Secure the target profile context scope
-    $employee_id = $isAdmin 
-        ? $request->get('employee_id') 
-        : ($user->employee_id ?? $user->employee->id);
+        $year = $request->get('year', Carbon::now()->year);
 
-    $year = $request->get('year', Carbon::now()->year);
+        // Check if single employee's balances are requested
+        if ($request->has('employee_id') && !empty($request->get('employee_id')) && $request->get('employee_id') !== 'all') {
+            $employee_id = $request->get('employee_id');
+            if (!$isAdmin && $employee_id != ($user->employee_id ?? $user->employee->id)) {
+                return response()->json(['message' => 'Unauthorized'], 403);
+            }
 
-    $balances = LeaveBalance::with('leaveType')
-        ->where('employee_id', $employee_id)
-        ->where('year', $year)
-        ->paginate($request->per_page ?? 10);
+            $balances = LeaveBalance::with('leaveType')
+                ->where('employee_id', $employee_id)
+                ->where('year', $year)
+                ->paginate($request->per_page ?? 10);
 
-    return LeaveBalanceResource::collection($balances);
-}
+            return LeaveBalanceResource::collection($balances);
+        }
+
+        // Otherwise, if not admin, return current user's balances (simple array)
+        if (!$isAdmin) {
+            $employee_id = $user->employee_id ?? $user->employee->id;
+            $balances = LeaveBalance::with('leaveType')
+                ->where('employee_id', $employee_id)
+                ->where('year', $year)
+                ->paginate($request->per_page ?? 10);
+
+            return LeaveBalanceResource::collection($balances);
+        }
+
+        // Admin viewing all: Grouped and paginated by Employee!
+        $query = Employee::with([
+            'department',
+            'leaveBalances' => function ($q) use ($year) {
+                $q->where('year', $year)->with('leaveType');
+            }
+        ])->where('status', 'active');
+
+        // Apply filters
+        if ($request->has('search') && !empty($request->get('search'))) {
+            $search = $request->get('search');
+            $query->where(function ($q) use ($search) {
+                $q->where('first_name', 'like', "%{$search}%")
+                  ->orWhere('last_name', 'like', "%{$search}%")
+                  ->orWhere('employee_code', 'like', "%{$search}%");
+            });
+        }
+
+        if ($request->has('department_id') && !empty($request->get('department_id'))) {
+            $query->where('department_id', $request->get('department_id'));
+        }
+
+        if ($request->has('leave_type_id') && !empty($request->get('leave_type_id'))) {
+            $leaveTypeId = $request->get('leave_type_id');
+            $query->whereHas('leaveBalances', function ($q) use ($leaveTypeId, $year) {
+                $q->where('leave_type_id', $leaveTypeId)->where('year', $year);
+            });
+            $query->with([
+                'leaveBalances' => function ($q) use ($leaveTypeId, $year) {
+                    $q->where('leave_type_id', $leaveTypeId)->where('year', $year)->with('leaveType');
+                }
+            ]);
+        }
+
+        $employees = $query->paginate($request->per_page ?? 10);
+
+        return EmployeeLeaveBalancesResource::collection($employees);
+    }
 
     // Initialize balances for all employees for a given year
     public function initialize(

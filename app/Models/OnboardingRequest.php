@@ -14,7 +14,9 @@ class OnboardingRequest extends Model
         'candidate_name', 'email', 'phone', 'position', 'department',
         'joining_date', 'ctc', 'status', 'rejection_reason',
         'approved_by', 'approved_at', 'created_by', 'personal_details',
-        'access_token', 'link_expires_at'
+        'access_token', 'link_expires_at', 'onboarding_type',
+        'custom_heading', 'required_documents', 'optional_documents',
+        'custom_document_labels'
     ];
 
     protected $casts = [
@@ -23,6 +25,9 @@ class OnboardingRequest extends Model
         'ctc' => 'decimal:2',
         'personal_details' => 'array',
         'link_expires_at' => 'datetime',
+        'required_documents' => 'array',
+        'optional_documents' => 'array',
+        'custom_document_labels' => 'array',
     ];
 
     protected static function boot()

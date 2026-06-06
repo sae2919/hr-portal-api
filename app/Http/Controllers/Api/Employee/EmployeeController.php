@@ -84,17 +84,8 @@ class EmployeeController extends Controller
     // ── Managers (for Reporting To dropdown) ─────────────────────
     public function managers(Request $request): JsonResponse
     {
-        $keywords = ['manager', 'lead', 'director', 'ceo', 'cto', 'cfo', 'coo', 'hr', 'head', 'chief', 'president', 'admin', 'supervisor'];
-
         $query = Employee::with(['department', 'designation'])
-            ->where('status', 'active')
-            ->whereHas('designation', function ($q) use ($keywords) {
-                $q->where(function ($inner) use ($keywords) {
-                    foreach ($keywords as $kw) {
-                        $inner->orWhere('title', 'like', "%{$kw}%");
-                    }
-                });
-            });
+            ->where('status', 'active');
 
         if ($request->filled('department_id')) {
             $query->where('department_id', $request->department_id);

@@ -150,6 +150,8 @@ Route::prefix('v1')->group(function () {
             Route::get('/',                 [SalaryRevisionController::class, 'index']);
             Route::post('/',                [SalaryRevisionController::class, 'store']);
             Route::get('/{id}/download',    [SalaryRevisionController::class, 'download']);
+            Route::put('/{id}',             [SalaryRevisionController::class, 'update']);
+            Route::delete('/{id}',          [SalaryRevisionController::class, 'destroy']);
         });
 
         // ──────────────────────────────────────

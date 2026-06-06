@@ -18,7 +18,7 @@ class LeaveTypeSeeder extends Seeder
             ['name' => 'Earned Leave',    'code' => 'EL',  'days_per_year' => 15, 'is_paid' => true,  'color' => '#10B981', 'carry_forward' => true],
             ['name' => 'Unpaid Leave',    'code' => 'UL',  'days_per_year' => 30, 'is_paid' => false, 'color' => '#6B7280'],
             ['name' => 'Maternity Leave', 'code' => 'ML',  'days_per_year' => 90, 'is_paid' => true,  'color' => '#EC4899'],
-            ['name' => 'Compensatory',   'code' => 'COM', 'days_per_year' => 0,  'is_paid' => true,  'color' => '#F59E0B'],
+            ['name' => 'Comp Off',        'code' => 'COM', 'days_per_year' => 0,  'is_paid' => true,  'color' => '#F59E0B'],
         ];
 
         foreach ($types as $type) {

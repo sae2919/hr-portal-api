@@ -133,6 +133,27 @@ class Employee extends Model
         });
 
         static::created(function ($employee) {
+            // Initialize default leave balances for the current year
+            $year = now()->year;
+            $types = \App\Models\LeaveType::where('status', 'active')->get();
+            foreach ($types as $type) {
+                $exists = \App\Models\LeaveBalance::where('employee_id', $employee->id)
+                    ->where('leave_type_id', $type->id)
+                    ->where('year', $year)
+                    ->exists();
+
+                if (!$exists) {
+                    \App\Models\LeaveBalance::create([
+                        'employee_id'    => $employee->id,
+                        'leave_type_id'  => $type->id,
+                        'year'           => $year,
+                        'total_days'     => (float) $type->days_per_year,
+                        'used_days'      => 0,
+                        'remaining_days' => (float) $type->days_per_year,
+                    ]);
+                }
+            }
+
             // Create initial payroll record if _salary_data was provided (i.e. created from form)
             if (!$employee->_salary_data) return;
 
@@ -191,6 +212,7 @@ class Employee extends Model
     public function salaryStructure() { return $this->hasOne(SalaryStructure::class)->latestOfMany(); }
     public function payrolls() { return $this->hasMany(Payroll::class); }
     public function leaves() { return $this->hasMany(Leave::class); }
+    public function leaveBalances() { return $this->hasMany(LeaveBalance::class); }
 
     // ── Accessors ─────────────────────────────────────────────────
     public function getFullNameAttribute(): string

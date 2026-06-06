@@ -16,9 +16,15 @@ class DocumentController extends Controller
      */
     public function upload(Request $request, OnboardingRequest $onboardingRequest): JsonResponse
     {
+        $allowedTypes = array_merge(
+            ['resume', 'id_proof', 'address_proof', 'degree', 'previous_employment', 'bank_details', 'pan_card', 'aadhaar_card', 'passport', 'other', 'payslips', 'experience_letter'],
+            $onboardingRequest->required_documents ?? [],
+            $onboardingRequest->optional_documents ?? []
+        );
+
         $request->validate([
             'document' => 'required|file|mimes:pdf,jpg,jpeg,png,doc,docx|max:5120', // 5MB max
-            'document_type' => 'required|in:resume,id_proof,address_proof,degree,previous_employment,bank_details,pan_card,aadhaar_card,passport,other',
+            'document_type' => 'required|in:' . implode(',', $allowedTypes),
         ]);
         
         $file = $request->file('document');
@@ -132,10 +138,15 @@ class DocumentController extends Controller
                 'message' => 'Onboarding has already been completed.'
             ], 422);
         }
+        $allowedTypes = array_merge(
+            ['resume', 'id_proof', 'address_proof', 'degree', 'previous_employment', 'bank_details', 'pan_card', 'aadhaar_card', 'passport', 'other', 'payslips', 'experience_letter'],
+            $onboardingRequest->required_documents ?? [],
+            $onboardingRequest->optional_documents ?? []
+        );
 
         $request->validate([
             'document' => 'required|file|mimes:pdf,jpg,jpeg,png,doc,docx|max:5120', // 5MB max
-            'document_type' => 'required|in:resume,id_proof,address_proof,degree,previous_employment,bank_details,pan_card,aadhaar_card,passport,other',
+            'document_type' => 'required|in:' . implode(',', $allowedTypes),
         ]);
         
         $file = $request->file('document');

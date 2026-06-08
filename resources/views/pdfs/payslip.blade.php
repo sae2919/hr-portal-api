@@ -259,7 +259,14 @@
         }
 
         // Deduction rows
+        $lopDeduction = (float)($payroll->lop_deduction ?? 0);
         $rightRows = [];
+
+        // Always show LOP Deduction first if there are LOP days
+        if ($lopDeduction > 0) {
+            $rightRows[] = ['label' => 'LOP', 'actual' => $lopDeduction];
+        }
+
         if (!$isIntern) {
             foreach ($payroll->items->where('type', 'deduction') as $item) {
                 $label = $item->name;
@@ -271,6 +278,11 @@
             
             if (empty($rightRows)) {
                 $rightRows[] = ['label' => 'Prof Tax', 'actual' => 0];
+            }
+        } else {
+            // For interns with no LOP, keep a blank row for alignment
+            if ($lopDeduction == 0) {
+                $rightRows[] = ['label' => '', 'actual' => null];
             }
         }
 
@@ -411,7 +423,7 @@
             <td class="col-right">
                 <table style="width: 100%; border-collapse: collapse; border: none;">
                     <tr>
-                        <td style="width: 45%; padding: 2px 0; border: none; font-weight: normal; font-size: 11px;">Employee ID:</td>
+                        <td style="width: 45%; padding: 2px 0; border: none; font-weight: normal; font-size: 11px;">Employee Code:</td>
                         <td style="width: 55%; padding: 2px 0; border: none; font-weight: normal; font-size: 11px;">{{ $employee->employee_code }}</td>
                     </tr>
                     <tr>
@@ -432,7 +444,7 @@
                     </tr>
                     <tr>
                         <td style="width: 45%; padding: 2px 0; border: none; font-weight: normal; font-size: 11px;">LOP:</td>
-                        <td style="width: 55%; padding: 2px 0; border: none; font-weight: normal; font-size: 11px;">{{ $payroll->lop_days ?? 0 }}</td>
+                        <td style="width: 55%; padding: 2px 0; border: none; font-weight: normal; font-size: 11px;">{{ (int)($payroll->lop_days ?? 0) }}</td>
                     </tr>
                 </table>
             </td>
@@ -474,7 +486,7 @@
                 <td class="amount">{{ number_format($masterGross, 2) }}</td>
                 <td class="amount">{{ number_format($payroll->gross_salary, 2) }}</td>
                 <td>Total Deductions:INR.</td>
-                <td class="amount">{{ number_format($payroll->total_deductions, 2) }}</td>
+                <td class="amount">{{ number_format($payroll->total_deductions + $lopDeduction, 2) }}</td>
             </tr>
         </tbody>
     </table>

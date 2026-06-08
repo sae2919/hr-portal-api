@@ -17,16 +17,24 @@ class AssetController extends Controller
      */
     public function index(Request $request): JsonResponse
     {
-        $query = Asset::with('currentAllocation');
+        $query = Asset::with(['currentAllocation.employee', 'currentAllocation.onboardingRequest', 'currentAllocation.allocator']);
         
         // Filter by type
         if ($request->type) {
-            $query->where('type', $request->type);
+            if ($request->type === 'other') {
+                $query->whereNotIn('type', ['laptop', 'monitor', 'phone', 'keyboard', 'mouse', 'headset', 'docking_station']);
+            } else {
+                $query->where('type', $request->type);
+            }
         }
         
         // Filter by status
         if ($request->status) {
-            $query->where('status', $request->status);
+            if ($request->status === 'exclude_assigned') {
+                $query->where('status', '!=', 'assigned');
+            } else {
+                $query->where('status', $request->status);
+            }
         }
         
         // Search
@@ -42,7 +50,8 @@ class AssetController extends Controller
         
         return response()->json([
             'success' => true,
-            'data' => $assets
+            'data' => $assets,
+            'total_registered' => Asset::count()
         ]);
     }
     
@@ -53,7 +62,7 @@ class AssetController extends Controller
     {
         $request->validate([
             'name' => 'required|string|max:255',
-            'type' => 'required|in:laptop,monitor,phone,keyboard,mouse,headset,docking_station,other',
+            'type' => 'required|string|max:255',
             'brand' => 'nullable|string|max:255',
             'model' => 'nullable|string|max:255',
             'serial_number' => 'nullable|string|unique:assets,serial_number',
@@ -91,7 +100,7 @@ class AssetController extends Controller
     {
         $request->validate([
             'name' => 'sometimes|string|max:255',
-            'type' => 'sometimes|in:laptop,monitor,phone,keyboard,mouse,headset,docking_station,other',
+            'type' => 'sometimes|string|max:255',
             'brand' => 'nullable|string|max:255',
             'model' => 'nullable|string|max:255',
             'serial_number' => 'nullable|string|unique:assets,serial_number,' . $asset->id,
@@ -114,7 +123,8 @@ class AssetController extends Controller
     public function allocate(Request $request, Asset $asset): JsonResponse
     {
         $request->validate([
-            'onboarding_request_id' => 'required|exists:onboarding_requests,id',
+            'onboarding_request_id' => 'required_without:employee_id|nullable|exists:onboarding_requests,id',
+            'employee_id' => 'required_without:onboarding_request_id|nullable|exists:employees,id',
             'condition_notes' => 'nullable|string',
         ]);
         
@@ -131,6 +141,7 @@ class AssetController extends Controller
             $allocation = AssetAllocation::create([
                 'asset_id' => $asset->id,
                 'onboarding_request_id' => $request->onboarding_request_id,
+                'employee_id' => $request->employee_id,
                 'allocated_date' => now(),
                 'status' => 'allocated',
                 'condition_notes' => $request->condition_notes,

@@ -80,7 +80,7 @@ class Employee extends Model
     {
         static::creating(function ($employee) {
             if (empty($employee->employee_code)) {
-                $employee->employee_code = self::generateCode();
+                $employee->employee_code = self::generateCode($employee);
             }
         });
 
@@ -195,11 +195,33 @@ class Employee extends Model
         });
     }
 
-    private static function generateCode(): string
+    private static function generateCode(Employee $employee): string
     {
-        $last = self::latest('id')->first();
-        $next = $last ? (int) substr($last->employee_code, 3) + 1 : 1;
-        return 'EMP' . str_pad($next, 4, '0', STR_PAD_LEFT);
+        // Check if it's a free intern (intern with 0 basic salary)
+        $isFreeIntern = ($employee->employment_type === 'intern' && (float)($employee->basic_salary ?? 0) == 0);
+
+        if ($isFreeIntern) {
+            // Find the maximum numeric suffix among E codes (like E001, E002, etc.)
+            $maxNum = self::where('employee_code', 'like', 'E%')
+                ->pluck('employee_code')
+                ->map(function ($code) {
+                    return (int) substr($code, 1);
+                })
+                ->max();
+
+            $next = $maxNum ? $maxNum + 1 : 1;
+            return 'E' . str_pad($next, 3, '0', STR_PAD_LEFT);
+        } else {
+            // Standard numeric codes (e.g. 1026, 1030)
+            $maxNum = self::pluck('employee_code')
+                ->map(function ($code) {
+                    return is_numeric($code) ? (int) $code : 0;
+                })
+                ->max();
+
+            $next = $maxNum ? $maxNum + 1 : 1000;
+            return str_pad($next, 4, '0', STR_PAD_LEFT);
+        }
     }
 
     // ── Relationships ─────────────────────────────────────────────
@@ -213,8 +235,56 @@ class Employee extends Model
     public function payrolls() { return $this->hasMany(Payroll::class); }
     public function leaves() { return $this->hasMany(Leave::class); }
     public function leaveBalances() { return $this->hasMany(LeaveBalance::class); }
+    public function assetAllocations() { return $this->hasMany(AssetAllocation::class); }
+    public function salaryRevisions() { return $this->hasMany(SalaryRevision::class); }
 
     // ── Accessors ─────────────────────────────────────────────────
+    public function getDesignationRevisedDateAttribute(): ?\Carbon\Carbon
+    {
+        $revisions = $this->salaryRevisions;
+        if ($revisions->isEmpty()) {
+            return $this->joining_date;
+        }
+
+        $reversedRevisions = $revisions->sortBy('effective_date')->reverse();
+        $currentDesignationId = $this->designation_id;
+        $startDate = $this->joining_date;
+
+        foreach ($reversedRevisions as $rev) {
+            if ($rev->new_designation_id == $currentDesignationId) {
+                $startDate = $rev->effective_date;
+            } else {
+                break;
+            }
+        }
+
+        return $startDate;
+    }
+
+    public function getPreviousDesignationJoiningDateAttribute(): ?\Carbon\Carbon
+    {
+        $previousDesignationId = $this->previous_designation_id;
+        if (!$previousDesignationId) {
+            return null;
+        }
+
+        $revisions = $this->salaryRevisions;
+        $reversedRevisions = $revisions->sortBy('effective_date')->reverse();
+        $startDate = $this->joining_date;
+        $foundSpell = false;
+
+        foreach ($reversedRevisions as $rev) {
+            if ($rev->new_designation_id == $previousDesignationId) {
+                $startDate = $rev->effective_date;
+                $foundSpell = true;
+            } elseif ($foundSpell) {
+                break;
+            }
+        }
+
+        return $startDate;
+    }
+
     public function getFullNameAttribute(): string
     {
         return "{$this->first_name} {$this->last_name}";

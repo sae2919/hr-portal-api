@@ -129,11 +129,16 @@ class SalaryRevisionController extends Controller
         $ptState = $emp->pt_state;
         $ptAmount = 0.0;
         if ($ptState) {
-            if ($ptState === 'Andhra Pradesh' || $ptState === 'Telangana' || $ptState === 'Karnataka') {
-                $ptAmount = ($newGross <= 15000) ? 0 : 200;
-                if ($ptState === 'Karnataka' && $newGross > 15000 && $newGross <= 25000) {
+            if ($ptState === 'Andhra Pradesh' || $ptState === 'Telangana') {
+                if ($newGross <= 15000) {
+                    $ptAmount = 0;
+                } elseif ($newGross <= 20000) {
                     $ptAmount = 150;
+                } else {
+                    $ptAmount = 200;
                 }
+            } elseif ($ptState === 'Karnataka') {
+                $ptAmount = ($newGross <= 15000) ? 0 : 200;
             } elseif ($ptState === 'Maharashtra') {
                 if ($newGross <= 7500) $ptAmount = 0;
                 elseif ($newGross <= 10000) $ptAmount = 175;
@@ -418,11 +423,16 @@ class SalaryRevisionController extends Controller
         $ptState = $emp->pt_state;
         $ptAmount = 0.0;
         if ($ptState) {
-            if ($ptState === 'Andhra Pradesh' || $ptState === 'Telangana' || $ptState === 'Karnataka') {
-                $ptAmount = ($newGross <= 15000) ? 0 : 200;
-                if ($ptState === 'Karnataka' && $newGross > 15000 && $newGross <= 25000) {
+            if ($ptState === 'Andhra Pradesh' || $ptState === 'Telangana') {
+                if ($newGross <= 15000) {
+                    $ptAmount = 0;
+                } elseif ($newGross <= 20000) {
                     $ptAmount = 150;
+                } else {
+                    $ptAmount = 200;
                 }
+            } elseif ($ptState === 'Karnataka') {
+                $ptAmount = ($newGross <= 15000) ? 0 : 200;
             } elseif ($ptState === 'Maharashtra') {
                 if ($newGross <= 7500) $ptAmount = 0;
                 elseif ($newGross <= 10000) $ptAmount = 175;
@@ -591,8 +601,170 @@ class SalaryRevisionController extends Controller
             return response()->json(['message' => 'Unauthorized.'], 403);
         }
 
-        $revision = SalaryRevision::findOrFail($id);
-        $revision->delete();
+        $revision = SalaryRevision::with('employee')->findOrFail($id);
+
+        \Illuminate\Support\Facades\DB::transaction(function () use ($revision) {
+            $employee = $revision->employee;
+
+            if ($employee) {
+                // Check if this is the latest revision for this employee
+                $isLatest = !SalaryRevision::where('employee_id', $employee->id)
+                    ->where('id', '>', $revision->id)
+                    ->exists();
+
+                if ($isLatest) {
+                    $oldBasic = (float) $revision->old_basic_salary;
+                    $oldHra = (float) $revision->old_hra;
+                    $oldAllowances = (float) $revision->old_allowances;
+                    $oldBonus = (float) $revision->old_bonus;
+                    $oldGross = (float) $revision->old_gross_salary;
+                    $oldDesignationId = $revision->old_designation_id ?? $employee->previous_designation_id ?? $employee->designation_id;
+                    $oldEmpType = $revision->old_employment_type ?? $employee->employment_type;
+
+                    // 1. Recalculate PF
+                    $pfPercentage = (int) ($employee->pf_percentage ?? 0);
+                    $pfDeduction = round(($oldBasic * $pfPercentage) / 100);
+
+                    // 2. Recalculate ESI
+                    $esiEmployee = 0.0;
+                    $esiEmployer = 0.0;
+                    $hasEsi = ($employee->esi_employee > 0);
+                    if ($hasEsi && $oldGross <= 21000) {
+                        $esiEmployee = round($oldGross * 0.0075);
+                        $esiEmployer = round($oldGross * 0.0325);
+                    }
+
+                    // 3. Recalculate PT
+                    $ptState = $employee->pt_state;
+                    $ptAmount = 0.0;
+                    if ($ptState) {
+                        if ($ptState === 'Andhra Pradesh' || $ptState === 'Telangana') {
+                            if ($oldGross <= 15000) {
+                                $ptAmount = 0;
+                            } elseif ($oldGross <= 20000) {
+                                $ptAmount = 150;
+                            } else {
+                                $ptAmount = 200;
+                            }
+                        } elseif ($ptState === 'Karnataka') {
+                            $ptAmount = ($oldGross <= 15000) ? 0 : 200;
+                        } elseif ($ptState === 'Maharashtra') {
+                            if ($oldGross <= 7500) $ptAmount = 0;
+                            elseif ($oldGross <= 10000) $ptAmount = 175;
+                            else $ptAmount = 200;
+                        } elseif ($ptState === 'Tamil Nadu') {
+                            $ptAmount = ($oldGross <= 21000) ? 0 : 208;
+                        } elseif ($ptState === 'West Bengal') {
+                            if ($oldGross <= 10000) $ptAmount = 0;
+                            elseif ($oldGross <= 15000) $ptAmount = 110;
+                            elseif ($oldGross <= 25000) $ptAmount = 130;
+                            elseif ($oldGross <= 40000) $ptAmount = 150;
+                            else $ptAmount = 200;
+                        } elseif ($ptState === 'Gujarat') {
+                            if ($oldGross <= 5999) $ptAmount = 0;
+                            elseif ($oldGross <= 8999) $ptAmount = 80;
+                            elseif ($oldGross <= 11999) $ptAmount = 150;
+                            else $ptAmount = 200;
+                        } elseif ($ptState === 'Madhya Pradesh') {
+                            $ptAmount = ($oldGross <= 18750) ? 0 : 208;
+                        } elseif ($ptState === 'Kerala') {
+                            if ($oldGross <= 11999) $ptAmount = 0;
+                            elseif ($oldGross <= 17999) $ptAmount = 120;
+                            elseif ($oldGross <= 29999) $ptAmount = 180;
+                            else $ptAmount = 208;
+                        } else {
+                            $ptAmount = (float) ($employee->pt_amount ?? 0);
+                        }
+                    }
+
+                    $taxDeduction = (float) ($employee->tds_amount ?? 0);
+                    $otherDeductions = (float) ($employee->other_deductions ?? 0);
+                    $ctc = $oldGross * 12 + $esiEmployer * 12;
+
+                    // 4. Resolve Designation, Previous Designation, and Position Level/User Role
+                    $employee->designation_id = $oldDesignationId;
+                    $employee->employment_type = $oldEmpType;
+
+                    $prevDesignationRevision = SalaryRevision::where('employee_id', $employee->id)
+                        ->where('id', '!=', $revision->id)
+                        ->whereNotNull('old_designation_id')
+                        ->whereNotNull('new_designation_id')
+                        ->whereRaw('old_designation_id != new_designation_id')
+                        ->orderBy('effective_date', 'desc')
+                        ->first();
+
+                    if ($prevDesignationRevision) {
+                        $employee->previous_designation_id = $prevDesignationRevision->old_designation_id;
+                    } else {
+                        $employee->previous_designation_id = null;
+                    }
+
+                    if ($oldDesignationId) {
+                        $oldDesignation = \App\Models\Designation::find($oldDesignationId);
+                        if ($oldDesignation) {
+                            $title = strtolower($oldDesignation->title);
+                            $resolvedPositionLevel = 'staff';
+                            $resolvedRole = 'employee';
+
+                            if (preg_match('/\b(ceo|founder|president|co-founder|co_founder|cto|cfo|coo|chief)\b/', $title)) {
+                                $resolvedPositionLevel = 'c_level';
+                                $resolvedRole = 'admin';
+                            } elseif (preg_match('/\b(manager|director)\b/', $title)) {
+                                $resolvedPositionLevel = 'manager';
+                                $resolvedRole = 'manager';
+                            } elseif (preg_match('/\b(lead|head|supervisor)\b/', $title)) {
+                                $resolvedPositionLevel = 'team_lead';
+                                $resolvedRole = 'team_lead';
+                            }
+
+                            $employee->position_level = $resolvedPositionLevel;
+
+                            if ($employee->user) {
+                                $employee->user->role = $resolvedRole;
+                                $employee->user->save();
+                                $employee->user->syncRoles([$resolvedRole]);
+                            }
+                        }
+                    }
+
+                    // 5. Update employee salary fields
+                    $employee->basic_salary = $oldBasic;
+                    $employee->hra = $oldHra;
+                    $employee->allowances = [['type' => 'other', 'amount' => $oldAllowances]];
+                    $employee->bonus = $oldBonus;
+                    $employee->pf_deduction = $pfDeduction;
+                    $employee->esi_employee = $esiEmployee;
+                    $employee->esi_employer = $esiEmployer;
+                    $employee->pt_amount = $ptAmount;
+                    $employee->ctc = $ctc;
+
+                    $employee->saveQuietly();
+
+                    // 6. Manage SalaryStructures
+                    $activeStructure = SalaryStructure::where('employee_id', $employee->id)
+                        ->where('status', 'active')
+                        ->first();
+
+                    if ($activeStructure) {
+                        $activeStructure->delete();
+                    }
+
+                    $prevStructure = SalaryStructure::where('employee_id', $employee->id)
+                        ->where('status', 'inactive')
+                        ->orderBy('effective_from', 'desc')
+                        ->orderBy('id', 'desc')
+                        ->first();
+
+                    if ($prevStructure) {
+                        $prevStructure->status = 'active';
+                        $prevStructure->save();
+                    }
+                }
+            }
+
+            // Finally delete the revision record
+            $revision->delete();
+        });
 
         return response()->json(['message' => 'Salary revision record deleted successfully.']);
     }

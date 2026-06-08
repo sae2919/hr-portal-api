@@ -40,9 +40,9 @@ class LeaveTypeController extends Controller
     public function update(Request $request, LeaveType $leaveType): JsonResponse
     {
         $request->validate([
-            'name'          => ['required', 'string', "unique:leave_types,name,{$leaveType->id}"],
-            'code'          => ['required', 'string', "unique:leave_types,code,{$leaveType->id}"],
-            'days_per_year' => ['required', 'integer', 'min:0'],
+            'name'          => ['sometimes', 'required', 'string', "unique:leave_types,name,{$leaveType->id}"],
+            'code'          => ['sometimes', 'required', 'string', "unique:leave_types,code,{$leaveType->id}"],
+            'days_per_year' => ['sometimes', 'required', 'integer', 'min:0'],
             'carry_forward' => ['boolean'],
             'is_paid'       => ['boolean'],
             'color'         => ['nullable', 'string'],

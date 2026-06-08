@@ -48,6 +48,25 @@ class EmployeeResource extends JsonResource
                 'designation'   => $this->manager->designation?->title,
                 'photo'         => $this->manager->photo_url,
             ] : null),
+            'assets'          => $this->whenLoaded('assetAllocations', fn() => $this->assetAllocations->map(fn($alloc) => [
+                'id' => $alloc->id,
+                'asset_id' => $alloc->asset_id,
+                'allocated_date' => $alloc->allocated_date?->toDateString(),
+                'return_date' => $alloc->return_date?->toDateString(),
+                'status' => $alloc->status,
+                'condition_notes' => $alloc->condition_notes,
+                'return_notes' => $alloc->return_notes,
+                'asset' => $alloc->asset ? [
+                    'id' => $alloc->asset->id,
+                    'asset_code' => $alloc->asset->asset_code,
+                    'name' => $alloc->asset->name,
+                    'type' => $alloc->asset->type,
+                    'brand' => $alloc->asset->brand,
+                    'model' => $alloc->asset->model,
+                    'serial_number' => $alloc->asset->serial_number,
+                    'specifications' => $alloc->asset->specifications,
+                ] : null,
+            ])),
             'joining_date'    => $this->joining_date?->toDateString(),
             'exit_date'       => $this->exit_date?->toDateString(),
             'employment_type' => $this->employment_type,
@@ -90,6 +109,8 @@ class EmployeeResource extends JsonResource
                 'voter_id'         => $this->voter_id,
                 'uan_number'       => $this->uan_number,
                 'previous_designation' => $this->previousDesignation?->title,
+                'designation_revised_date' => $this->designation_revised_date?->toDateString(),
+                'previous_designation_joining_date' => $this->previous_designation_joining_date?->toDateString(),
             ]);
         }
 

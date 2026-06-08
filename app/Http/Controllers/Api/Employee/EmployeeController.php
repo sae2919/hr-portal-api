@@ -191,7 +191,7 @@ class EmployeeController extends Controller
 
         return response()->json([
             'message' => 'Employee created successfully.',
-            'data' => new EmployeeResource($employee->load(['department', 'designation', 'manager', 'previousDesignation'])),
+            'data' => new EmployeeResource($employee->load(['department', 'designation', 'manager', 'previousDesignation', 'assetAllocations.asset', 'salaryRevisions'])),
         ], 201);
     }
 
@@ -214,7 +214,7 @@ class EmployeeController extends Controller
         }
 
         return response()->json([
-            'data' => new EmployeeResource($employee->load(['department', 'designation', 'manager', 'previousDesignation'])),
+            'data' => new EmployeeResource($employee->load(['department', 'designation', 'manager', 'previousDesignation', 'assetAllocations.asset', 'salaryRevisions'])),
         ]);
     }
 
@@ -331,7 +331,7 @@ class EmployeeController extends Controller
 
         return response()->json([
             'message' => 'Employee updated successfully.',
-            'data' => new EmployeeResource($employee->load(['department', 'designation', 'manager', 'previousDesignation'])),
+            'data' => new EmployeeResource($employee->load(['department', 'designation', 'manager', 'previousDesignation', 'assetAllocations.asset', 'salaryRevisions'])),
         ]);
     }
 

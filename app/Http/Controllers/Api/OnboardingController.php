@@ -337,7 +337,6 @@ class OnboardingController extends Controller
                 'last_name' => $lastName,
                 'email' => $onboardingRequest->email,
                 'phone' => $onboardingRequest->phone ?: ($personal['phone'] ?? null),
-                'employee_code' => 'EMP' . str_pad(Employee::count() + 1, 4, '0', STR_PAD_LEFT),
                 'department' => $onboardingRequest->department,
                 'designation' => $onboardingRequest->position,
                 'joining_date' => $onboardingRequest->joining_date,

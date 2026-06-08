@@ -28,7 +28,10 @@ class LeaveBalanceController extends Controller
                 return response()->json(['message' => 'Unauthorized'], 403);
             }
 
-            $balances = LeaveBalance::with('leaveType')
+            $balances = LeaveBalance::whereHas('leaveType', function ($q) {
+                    $q->where('status', 'active');
+                })
+                ->with('leaveType')
                 ->where('employee_id', $employee_id)
                 ->where('year', $year)
                 ->paginate($request->per_page ?? 10);
@@ -39,7 +42,10 @@ class LeaveBalanceController extends Controller
         // Otherwise, if not admin, return current user's balances (simple array)
         if (!$isAdmin) {
             $employee_id = $user->employee_id ?? $user->employee->id;
-            $balances = LeaveBalance::with('leaveType')
+            $balances = LeaveBalance::whereHas('leaveType', function ($q) {
+                    $q->where('status', 'active');
+                })
+                ->with('leaveType')
                 ->where('employee_id', $employee_id)
                 ->where('year', $year)
                 ->paginate($request->per_page ?? 10);
@@ -51,7 +57,9 @@ class LeaveBalanceController extends Controller
         $query = Employee::with([
             'department',
             'leaveBalances' => function ($q) use ($year) {
-                $q->where('year', $year)->with('leaveType');
+                $q->where('year', $year)->whereHas('leaveType', function ($query) {
+                    $query->where('status', 'active');
+                })->with('leaveType');
             }
         ])->where('status', 'active');
 
@@ -72,11 +80,15 @@ class LeaveBalanceController extends Controller
         if ($request->has('leave_type_id') && !empty($request->get('leave_type_id'))) {
             $leaveTypeId = $request->get('leave_type_id');
             $query->whereHas('leaveBalances', function ($q) use ($leaveTypeId, $year) {
-                $q->where('leave_type_id', $leaveTypeId)->where('year', $year);
+                $q->where('leave_type_id', $leaveTypeId)->where('year', $year)->whereHas('leaveType', function ($query) {
+                    $query->where('status', 'active');
+                });
             });
             $query->with([
                 'leaveBalances' => function ($q) use ($leaveTypeId, $year) {
-                    $q->where('leave_type_id', $leaveTypeId)->where('year', $year)->with('leaveType');
+                    $q->where('leave_type_id', $leaveTypeId)->where('year', $year)->whereHas('leaveType', function ($query) {
+                        $query->where('status', 'active');
+                    })->with('leaveType');
                 }
             ]);
         }

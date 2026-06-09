@@ -435,15 +435,6 @@ public function worksheet(Request $request): JsonResponse
     $perPage = $request->per_page ?? 10;
     $user    = auth()->user();
 
-    \Log::info('WORKSHEET REQUEST:', [
-        'user_id' => $user?->id,
-        'user_name' => $user?->name,
-        'employee_id' => $user?->employee?->id,
-        'is_admin_or_hr' => $this->isAdminOrHR(),
-        'is_manager' => $this->isManager(),
-        'is_team_lead' => $this->isTeamLead(),
-        'request_all' => $request->all(),
-    ]);
 
     $employeeQuery = \DB::table('employees')
         ->leftJoin('departments', 'employees.department_id', '=', 'departments.id')
@@ -480,26 +471,30 @@ public function worksheet(Request $request): JsonResponse
 
     $employees = $employeeQuery->paginate($perPage);
 
-    $employees->getCollection()->transform(function ($row) use ($date) {
+    // Pre-fetch ALL approved leaves for this date in ONE query (eliminates N+1)
+    $employeeIdsOnPage = $employees->getCollection()->pluck('employee_id')->toArray();
+
+    $leavesOnDate = \DB::table('leaves')
+        ->whereIn('employee_id', $employeeIdsOnPage)
+        ->where('status', 'approved')
+        ->whereDate('start_date', '<=', $date)
+        ->whereDate('end_date', '>=', $date)
+        ->pluck('employee_id')
+        ->flip()
+        ->toArray(); // keyed by employee_id for O(1) lookup
+
+    $employees->getCollection()->transform(function ($row) use ($date, $leavesOnDate) {
         $fullName = trim(($row->first_name ?? '') . ' ' . ($row->last_name ?? ''));
 
-        // Check if employee is on approved leave for this date
-        $leave = \DB::table('leaves')
-            ->where('employee_id', $row->employee_id)
-            ->where('status', 'approved')
-            ->whereDate('start_date', '<=', $date)
-            ->whereDate('end_date', '>=', $date)
-            ->first();
-
-        // FIXED: If on leave, set status to 'on_leave' instead of 'absent'
-        if ($leave) {
+        // Check if employee is on approved leave for this date (O(1) lookup, no DB hit)
+        if (isset($leavesOnDate[$row->employee_id])) {
             return [
                 'employee_id'    => (int) $row->employee_id,
                 'name'           => !empty($fullName) ? $fullName : 'Unnamed Employee',
                 'department'     => $row->department_name ?? 'N/A',
                 'check_in'       => '',
                 'check_out'      => '',
-                'status'         => 'on_leave',  // ← CHANGED from 'absent' to 'on_leave'
+                'status'         => 'on_leave',
                 'overtime_hours' => 0,
                 'note'           => 'On Approved Leave',
                 'is_saved'       => true,

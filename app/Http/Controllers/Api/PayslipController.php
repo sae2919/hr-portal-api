@@ -24,12 +24,8 @@ class PayslipController extends Controller
             'employee.department'
         ]);
 
-        $pdf = Pdf::loadView(
-            'pdfs.payslip',
-            [
-                'payroll' => $payroll
-            ]
-        );
+        $variables = \App\Services\DocumentService::getPayslipVariables($payroll);
+        $pdf = \App\Services\DocumentService::render('monthly_payslip_template', $variables);
 
         return $pdf->download(
             'payslip-'.$payroll->id.'.pdf'

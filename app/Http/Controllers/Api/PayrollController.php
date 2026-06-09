@@ -81,16 +81,17 @@ class PayrollController extends Controller
             });
         }
 
-        // Sorting
         $sortBy = $request->sort_by ?? 'created_at';
         $sortOrder = $request->sort_order ?? 'desc';
         
         if (in_array($sortBy, ['month', 'year', 'created_at', 'net_salary', 'gross_salary', 'status'])) {
             $query->orderBy($sortBy, $sortOrder);
+        } else {
+            $query->orderBy('created_at', 'desc');
         }
 
         $perPage = $request->per_page ?? 10;
-        $payrolls = $query->latest()->paginate($perPage);
+        $payrolls = $query->paginate($perPage);
 
         return response()->json($payrolls);
     }
@@ -238,10 +239,8 @@ class PayrollController extends Controller
                     continue;
                 }
 
-                $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('pdf.payslip', [
-                    'payroll'  => $payroll,
-                    'employee' => $payroll->employee,
-                ]);
+                $variables = \App\Services\DocumentService::getPayslipVariables($payroll, $payroll->employee);
+                $pdf = \App\Services\DocumentService::render('monthly_payslip_template', $variables);
                 $monthName = date("F", mktime(0, 0, 0, $payroll->month, 10));
 
                 \App\Services\MailService::sendTemplateMail(
@@ -508,10 +507,8 @@ class PayrollController extends Controller
         }
 
         try {
-            $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('pdf.payslip', [
-                'payroll'  => $payroll,
-                'employee' => $payroll->employee,
-            ]);
+            $variables = \App\Services\DocumentService::getPayslipVariables($payroll, $payroll->employee);
+            $pdf = \App\Services\DocumentService::render('monthly_payslip_template', $variables);
             $monthName = date("F", mktime(0, 0, 0, $payroll->month, 10));
 
             \App\Jobs\SendReusableMail::dispatch(
@@ -567,10 +564,8 @@ class PayrollController extends Controller
         if ($user->role !== 'admin' && $payroll->status !== 'paid') 
             abort(403, 'Payslip not yet released.');
 
-        $pdf = \PDF::loadView('pdf.payslip', [
-            'payroll' => $payroll, 
-            'employee' => $payroll->employee
-        ]);
+        $variables = \App\Services\DocumentService::getPayslipVariables($payroll, $payroll->employee);
+        $pdf = \App\Services\DocumentService::render('monthly_payslip_template', $variables);
         
         $filename = "payslip-{$payroll->employee_id}-{$payroll->year}-{$payroll->month}.pdf";
         return $pdf->stream($filename);

@@ -8,6 +8,7 @@ use App\Models\Employee;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
@@ -62,17 +63,21 @@ class EventController extends Controller
     public function upcoming(): JsonResponse
     {
         try {
-            $today = Carbon::today();
-            $endDate = Carbon::today()->addDays(30);
-            
-            $events = Event::where('event_date', '>=', $today)
-                ->where('event_date', '<=', $endDate)
-                ->orderBy('event_date')
-                ->limit(10)
-                ->get();
-            
+            $cacheKey = 'events_upcoming_' . now()->format('Y-m-d');
+
+            $events = Cache::remember($cacheKey, 300, function () {
+                $today   = Carbon::today();
+                $endDate = Carbon::today()->addDays(30);
+
+                return Event::where('event_date', '>=', $today)
+                    ->where('event_date', '<=', $endDate)
+                    ->orderBy('event_date')
+                    ->limit(10)
+                    ->get();
+            });
+
             return response()->json(['success' => true, 'data' => $events]);
-            
+
         } catch (\Exception $e) {
             Log::error('Error fetching upcoming events: ' . $e->getMessage());
             return response()->json(['success' => false, 'message' => 'Failed to fetch upcoming events', 'data' => []], 500);
@@ -85,74 +90,73 @@ class EventController extends Controller
     public function todaySpecial(): JsonResponse
     {
         try {
-            $today = Carbon::today();
-            $month = $today->month;
-            $day = $today->day;
-            
-            // Get today's birthdays from employees table (using 'dob' column)
-            $birthdays = Employee::where('status', 'active')
-                ->whereNotNull('dob')
-                ->whereRaw('MONTH(dob) = ?', [$month])
-                ->whereRaw('DAY(dob) = ?', [$day])
-                ->with(['department', 'designation'])
-                ->get();
-            
-            // Get today's work anniversaries (joining date anniversary)
-            $anniversaries = Employee::where('status', 'active')
-                ->whereNotNull('joining_date')
-                ->whereRaw('MONTH(joining_date) = ?', [$month])
-                ->whereRaw('DAY(joining_date) = ?', [$day])
-                ->with(['department', 'designation'])
-                ->get();
-            
-            // Calculate age for birthdays
-            $birthdaysWithAge = $birthdays->map(function($employee) use ($today) {
-                $dob = Carbon::parse($employee->dob);
-                $age = $dob->age;
-                return [
-                    'id' => $employee->id,
-                    'name' => $employee->first_name . ' ' . $employee->last_name,
-                    'first_name' => $employee->first_name,
-                    'last_name' => $employee->last_name,
-                    'date_of_birth' => $employee->dob,
-                    'age' => $age,
-                    'department' => $employee->department?->name,
-                    'designation' => $employee->designation?->name,
-                    'photo' => $employee->photo,
-                ];
+            $cacheKey = 'events_today_special_' . now()->format('Y-m-d');
+
+            $data = Cache::remember($cacheKey, 600, function () {
+                $today = Carbon::today();
+                $month = $today->month;
+                $day   = $today->day;
+
+                // Get today's birthdays from employees table (using 'dob' column)
+                $birthdays = Employee::where('status', 'active')
+                    ->whereNotNull('dob')
+                    ->whereRaw('MONTH(dob) = ?', [$month])
+                    ->whereRaw('DAY(dob) = ?', [$day])
+                    ->with(['department', 'designation'])
+                    ->get();
+
+                // Get today's work anniversaries (joining date anniversary)
+                $anniversaries = Employee::where('status', 'active')
+                    ->whereNotNull('joining_date')
+                    ->whereRaw('MONTH(joining_date) = ?', [$month])
+                    ->whereRaw('DAY(joining_date) = ?', [$day])
+                    ->with(['department', 'designation'])
+                    ->get();
+
+                // Calculate age for birthdays
+                $birthdaysWithAge = $birthdays->map(function($employee) use ($today) {
+                    $dob = Carbon::parse($employee->dob);
+                    return [
+                        'id'            => $employee->id,
+                        'name'          => $employee->first_name . ' ' . $employee->last_name,
+                        'first_name'    => $employee->first_name,
+                        'last_name'     => $employee->last_name,
+                        'date_of_birth' => $employee->dob,
+                        'age'           => $dob->age,
+                        'department'    => $employee->department?->name,
+                        'designation'   => $employee->designation?->name,
+                        'photo'         => $employee->photo,
+                    ];
+                });
+
+                // Calculate years of service for anniversaries
+                $anniversariesWithYears = $anniversaries->map(function($employee) use ($today) {
+                    $joiningDate    = Carbon::parse($employee->joining_date);
+                    $yearsOfService = $joiningDate->diffInYears($today);
+                    return [
+                        'id'              => $employee->id,
+                        'name'            => $employee->first_name . ' ' . $employee->last_name,
+                        'first_name'      => $employee->first_name,
+                        'last_name'       => $employee->last_name,
+                        'joining_date'    => $employee->joining_date,
+                        'years_of_service'=> $yearsOfService,
+                        'department'      => $employee->department?->name,
+                        'designation'     => $employee->designation?->name,
+                        'photo'           => $employee->photo,
+                    ];
+                });
+
+                return ['birthdays' => $birthdaysWithAge, 'anniversaries' => $anniversariesWithYears];
             });
-            
-            // Calculate years of service for anniversaries
-            $anniversariesWithYears = $anniversaries->map(function($employee) use ($today) {
-                $joiningDate = Carbon::parse($employee->joining_date);
-                $yearsOfService = $joiningDate->diffInYears($today);
-                return [
-                    'id' => $employee->id,
-                    'name' => $employee->first_name . ' ' . $employee->last_name,
-                    'first_name' => $employee->first_name,
-                    'last_name' => $employee->last_name,
-                    'joining_date' => $employee->joining_date,
-                    'years_of_service' => $yearsOfService,
-                    'department' => $employee->department?->name,
-                    'designation' => $employee->designation?->name,
-                    'photo' => $employee->photo,
-                ];
-            });
-            
-            return response()->json([
-                'success' => true,
-                'data' => [
-                    'birthdays' => $birthdaysWithAge,
-                    'anniversaries' => $anniversariesWithYears,
-                ]
-            ]);
-            
+
+            return response()->json(['success' => true, 'data' => $data]);
+
         } catch (\Exception $e) {
             Log::error('Error fetching today special: ' . $e->getMessage());
             return response()->json([
-                'success' => false, 
-                'message' => 'Failed to fetch today special', 
-                'data' => ['birthdays' => [], 'anniversaries' => []]
+                'success' => false,
+                'message' => 'Failed to fetch today special',
+                'data'    => ['birthdays' => [], 'anniversaries' => []]
             ], 500);
         }
     }

@@ -36,7 +36,7 @@ class EmployeeController extends Controller
     public function index(Request $request)
     {
         $user  = auth()->user();
-        $query = Employee::with(['department', 'designation', 'manager']);
+        $query = Employee::with(['department', 'designation', 'manager.designation']);
 
         if ($this->isAdminOrHR()) {
             if ($request->filled('search')) {
@@ -84,7 +84,7 @@ class EmployeeController extends Controller
     // ── Managers (for Reporting To dropdown) ─────────────────────
     public function managers(Request $request): JsonResponse
     {
-        $query = Employee::with(['department', 'designation'])
+        $query = Employee::with(['department', 'designation', 'manager.designation'])
             ->where('status', 'active');
 
         if ($request->filled('department_id')) {

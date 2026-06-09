@@ -9,6 +9,7 @@ use App\Models\Employee;
 use App\Models\Leave;
 use App\Models\Payroll;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Support\Facades\Cache;
 
 class DashboardController extends Controller
 {
@@ -84,87 +85,99 @@ class DashboardController extends Controller
         $employeeId = $user->employee?->id;
         $deptId     = $user->employee?->department_id;
 
-        if ($isAdmin) {
-            // ── Admin / HR: full system stats ─────────────────────────
-            $totalEmployees   = Employee::where('status', 'active')->count();
-            $totalDepartments = Department::where('status', 'active')->count();
-            $presentToday     = Attendance::whereDate('date', today())->where('status', 'present')->count();
-            $onLeave          = Leave::where('status', 'approved')
-                                    ->whereDate('start_date', '<=', today())
-                                    ->whereDate('end_date', '>=', today())
-                                    ->count();
-            $pendingLeaves    = Leave::where('status', 'pending')->count();
-            $totalPayroll     = Payroll::whereMonth('created_at', now()->month)
-                                    ->whereYear('created_at', now()->year)
-                                    ->sum('net_salary');
+        // Cache for 60 seconds per user — re-runs if stale or on next visit
+        $cacheKey = "dashboard_stats_{$user->id}";
 
-        } elseif ($isManager || $isTeamLead) {
-            // ── Manager / TeamLead: own department stats only ─────────
-            $totalEmployees   = Employee::where('status', 'active')
-                                    ->where('department_id', $deptId)->count();
-            $totalDepartments = 1;
-            $presentToday     = Attendance::whereDate('date', today())
-                                    ->where('status', 'present')
-                                    ->whereHas('employee', fn($q) => $q->where('department_id', $deptId))
-                                    ->count();
-            $onLeave          = Leave::where('status', 'approved')
-                                    ->whereDate('start_date', '<=', today())
-                                    ->whereDate('end_date', '>=', today())
-                                    ->whereHas('employee', fn($q) => $q->where('department_id', $deptId))
-                                    ->count();
-            $pendingLeaves    = Leave::where('status', 'pending')
-                                    ->whereHas('employee', fn($q) => $q->where('department_id', $deptId))
-                                    ->count();
-            $totalPayroll     = null; // TeamLead does not see payroll
+        $data = Cache::remember($cacheKey, 60, function () use (
+            $isAdmin, $isManager, $isTeamLead, $isSalesMgr, $employeeId, $deptId
+        ) {
+            if ($isAdmin) {
+                // ── Admin / HR: full system stats ─────────────────────────
+                $totalEmployees   = Employee::where('status', 'active')->count();
+                $totalDepartments = Department::where('status', 'active')->count();
+                $presentToday     = Attendance::whereDate('date', today())->where('status', 'present')->count();
+                $onLeave          = Leave::where('status', 'approved')
+                                        ->whereDate('start_date', '<=', today())
+                                        ->whereDate('end_date', '>=', today())
+                                        ->count();
+                $pendingLeaves    = Leave::where('status', 'pending')->count();
+                $totalPayroll     = Payroll::whereMonth('created_at', now()->month)
+                                        ->whereYear('created_at', now()->year)
+                                        ->sum('net_salary');
 
-        } elseif ($isSalesMgr) {
-            // ── SalesManager: department stats + payroll visibility ───
-            $totalEmployees   = Employee::where('status', 'active')
-                                    ->where('department_id', $deptId)->count();
-            $totalDepartments = Department::where('status', 'active')->count();
-            $presentToday     = Attendance::whereDate('date', today())
-                                    ->where('status', 'present')
-                                    ->whereHas('employee', fn($q) => $q->where('department_id', $deptId))
-                                    ->count();
-            $onLeave          = Leave::where('status', 'approved')
-                                    ->whereDate('start_date', '<=', today())
-                                    ->whereDate('end_date', '>=', today())
-                                    ->whereHas('employee', fn($q) => $q->where('department_id', $deptId))
-                                    ->count();
-            $pendingLeaves    = Leave::where('status', 'pending')
-                                    ->whereHas('employee', fn($q) => $q->where('department_id', $deptId))
-                                    ->count();
-            $totalPayroll     = Payroll::whereMonth('created_at', now()->month)
-                                    ->whereYear('created_at', now()->year)
-                                    ->whereHas('employee', fn($q) => $q->where('department_id', $deptId))
-                                    ->sum('net_salary');
+            } elseif ($isManager || $isTeamLead) {
+                // ── Manager / TeamLead: own department stats only ─────────
+                $totalEmployees   = Employee::where('status', 'active')
+                                        ->where('department_id', $deptId)->count();
+                $totalDepartments = 1;
+                $presentToday     = Attendance::whereDate('date', today())
+                                        ->where('status', 'present')
+                                        ->whereHas('employee', fn($q) => $q->where('department_id', $deptId))
+                                        ->count();
+                $onLeave          = Leave::where('status', 'approved')
+                                        ->whereDate('start_date', '<=', today())
+                                        ->whereDate('end_date', '>=', today())
+                                        ->whereHas('employee', fn($q) => $q->where('department_id', $deptId))
+                                        ->count();
+                $pendingLeaves    = Leave::where('status', 'pending')
+                                        ->whereHas('employee', fn($q) => $q->where('department_id', $deptId))
+                                        ->count();
+                $totalPayroll     = null; // TeamLead does not see payroll
 
-        } else {
-            // ── Employee: own stats only ──────────────────────────────
-            $totalEmployees   = null;
-            $totalDepartments = null;
-            $presentToday     = Attendance::whereDate('date', today())
-                                    ->where('employee_id', $employeeId)
-                                    ->where('status', 'present')
-                                    ->count();
-            $onLeave          = Leave::where('employee_id', $employeeId)
-                                    ->where('status', 'approved')
-                                    ->whereDate('start_date', '<=', today())
-                                    ->whereDate('end_date', '>=', today())
-                                    ->count();
-            $pendingLeaves    = Leave::where('employee_id', $employeeId)
-                                    ->where('status', 'pending')
-                                    ->count();
-            $totalPayroll     = null;
-        }
+            } elseif ($isSalesMgr) {
+                // ── SalesManager: department stats + payroll visibility ───
+                $totalEmployees   = Employee::where('status', 'active')
+                                        ->where('department_id', $deptId)->count();
+                $totalDepartments = Department::where('status', 'active')->count();
+                $presentToday     = Attendance::whereDate('date', today())
+                                        ->where('status', 'present')
+                                        ->whereHas('employee', fn($q) => $q->where('department_id', $deptId))
+                                        ->count();
+                $onLeave          = Leave::where('status', 'approved')
+                                        ->whereDate('start_date', '<=', today())
+                                        ->whereDate('end_date', '>=', today())
+                                        ->whereHas('employee', fn($q) => $q->where('department_id', $deptId))
+                                        ->count();
+                $pendingLeaves    = Leave::where('status', 'pending')
+                                        ->whereHas('employee', fn($q) => $q->where('department_id', $deptId))
+                                        ->count();
+                $totalPayroll     = Payroll::whereMonth('created_at', now()->month)
+                                        ->whereYear('created_at', now()->year)
+                                        ->whereHas('employee', fn($q) => $q->where('department_id', $deptId))
+                                        ->sum('net_salary');
+
+            } else {
+                // ── Employee: own stats only ──────────────────────────────
+                $totalEmployees   = null;
+                $totalDepartments = null;
+                $presentToday     = Attendance::whereDate('date', today())
+                                        ->where('employee_id', $employeeId)
+                                        ->where('status', 'present')
+                                        ->count();
+                $onLeave          = Leave::where('employee_id', $employeeId)
+                                        ->where('status', 'approved')
+                                        ->whereDate('start_date', '<=', today())
+                                        ->whereDate('end_date', '>=', today())
+                                        ->count();
+                $pendingLeaves    = Leave::where('employee_id', $employeeId)
+                                        ->where('status', 'pending')
+                                        ->count();
+                $totalPayroll     = null;
+            }
+
+            return compact(
+                'totalEmployees', 'totalDepartments', 'presentToday',
+                'onLeave', 'pendingLeaves', 'totalPayroll'
+            );
+        });
 
         return response()->json([
-            'employees'       => $totalEmployees,
-            'departments'     => $totalDepartments,
-            'present_today'   => $presentToday,
-            'on_leave'        => $onLeave,
-            'pending_leaves'  => $pendingLeaves,
-            'monthly_payroll' => $totalPayroll,
+            'employees'       => $data['totalEmployees'],
+            'departments'     => $data['totalDepartments'],
+            'present_today'   => $data['presentToday'],
+            'on_leave'        => $data['onLeave'],
+            'pending_leaves'  => $data['pendingLeaves'],
+            'monthly_payroll' => $data['totalPayroll'],
             'role'            => $user->getRoleNames()->first(),
         ]);
     }

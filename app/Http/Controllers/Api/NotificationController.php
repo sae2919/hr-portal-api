@@ -9,16 +9,22 @@ use App\Models\Attendance;
 use App\Models\Payroll;
 use App\Models\Employee;
 use Carbon\Carbon;
+use Illuminate\Support\Facades\Cache;
 
 class NotificationController extends Controller
 {
     public function index(Request $request)
     {
         $user     = $request->user();
-        $employee = Employee::where('user_id', $user->id)->first();
+        $employee = $user->employee; // already loaded via auth, no extra query
         $role     = $user->role ?? 'employee';
         $now      = Carbon::now();
-        $notifications = [];
+
+        // Cache per-user for 60 seconds — notifications don't need real-time precision
+        $cacheKey = "notifications_{$user->id}_" . $now->format('Y-m-d-H');
+
+        $notifications = Cache::remember($cacheKey, 60, function () use ($user, $employee, $role, $now) {
+            $notifications = [];
 
         // ── 1. LEAVE NOTIFICATIONS ────────────────────────────────────────────
 
@@ -93,18 +99,28 @@ class NotificationController extends Controller
 
         $today    = $now->format('m-d');
         $tomorrow = $now->copy()->addDay()->format('m-d');
+        $month    = $now->month;
+        $day      = $now->day;
+        $tomorrowMonth = $now->copy()->addDay()->month;
+        $tomorrowDay   = $now->copy()->addDay()->day;
 
+        // ✅ DB-level filter — no more Employee::get() loading all rows into PHP
         $birthdayEmployees = Employee::with('user')
-            ->whereNotNull('date_of_birth')
-            ->get()
-            ->filter(fn($e) =>
-                Carbon::parse($e->date_of_birth)->format('m-d') === $today ||
-                Carbon::parse($e->date_of_birth)->format('m-d') === $tomorrow
-            );
+            ->whereNotNull('dob')
+            ->where(function ($q) use ($month, $day, $tomorrowMonth, $tomorrowDay) {
+                $q->where(function ($q2) use ($month, $day) {
+                    $q2->whereRaw('MONTH(dob) = ?', [$month])
+                       ->whereRaw('DAY(dob) = ?', [$day]);
+                })->orWhere(function ($q2) use ($tomorrowMonth, $tomorrowDay) {
+                    $q2->whereRaw('MONTH(dob) = ?', [$tomorrowMonth])
+                       ->whereRaw('DAY(dob) = ?', [$tomorrowDay]);
+                });
+            })
+            ->get();
 
         foreach ($birthdayEmployees as $emp) {
-            $dob     = Carbon::parse($emp->date_of_birth);
-            $isToday = $dob->format('m-d') === $today;
+            $dobStr  = Carbon::parse($emp->dob)->format('m-d');
+            $isToday = $dobStr === $today;
             $notifications[] = [
                 'id'      => 'birthday_' . $emp->id,
                 'type'    => 'birthday',
@@ -117,20 +133,24 @@ class NotificationController extends Controller
             ];
         }
 
-        // Work anniversaries
+        // ✅ Work anniversaries — DB-level MONTH/DAY filter
         $anniversaryEmployees = Employee::with('user')
             ->whereNotNull('joining_date')
-            ->get()
-            ->filter(function ($e) use ($today, $tomorrow) {
-                $joined = Carbon::parse($e->joining_date);
-                // Only show if at least 1 year has passed
-                if ($joined->diffInYears(Carbon::now()) < 1) return false;
-                return $joined->format('m-d') === $today || $joined->format('m-d') === $tomorrow;
-            });
+            ->where(function ($q) use ($month, $day, $tomorrowMonth, $tomorrowDay) {
+                $q->where(function ($q2) use ($month, $day) {
+                    $q2->whereRaw('MONTH(joining_date) = ?', [$month])
+                       ->whereRaw('DAY(joining_date) = ?', [$day]);
+                })->orWhere(function ($q2) use ($tomorrowMonth, $tomorrowDay) {
+                    $q2->whereRaw('MONTH(joining_date) = ?', [$tomorrowMonth])
+                       ->whereRaw('DAY(joining_date) = ?', [$tomorrowDay]);
+                });
+            })
+            ->get();
 
         foreach ($anniversaryEmployees as $emp) {
             $joined  = Carbon::parse($emp->joining_date);
-            $years   = $joined->diffInYears(Carbon::now());
+            $years   = Carbon::now()->year - $joined->year;
+            if ($years < 1) continue; // skip < 1 year
             $isToday = $joined->format('m-d') === $today;
             $notifications[] = [
                 'id'      => 'anniversary_' . $emp->id,
@@ -141,6 +161,7 @@ class NotificationController extends Controller
                 'read'    => false,
                 'icon'    => 'star',
                 'color'   => 'yellow',
+                'url'     => '/events',
             ];
         }
 
@@ -241,6 +262,9 @@ class NotificationController extends Controller
                 ];
             }
         }
+
+            return $notifications;
+        }); // end Cache::remember
 
         // ── Sort: unread first, then by recency (already in order) ───────────
         return response()->json([

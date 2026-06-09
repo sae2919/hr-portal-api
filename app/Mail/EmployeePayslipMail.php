@@ -41,10 +41,8 @@ class EmployeePayslipMail extends Mailable
     public function attachments(): array
     {
         // 💡 Uses the corrected Barryvdh PDF generator class cleanly
-       $pdf = Pdf::loadView('pdf.payslip', [
-    'payroll'  => $this->payroll,
-    'employee' => $this->payroll->employee,
-]);
+        $variables = \App\Services\DocumentService::getPayslipVariables($this->payroll, $this->payroll->employee);
+        $pdf = \App\Services\DocumentService::render('monthly_payslip_template', $variables);
         
         $monthName = date("F", mktime(0, 0, 0, $this->payroll->month, 10));
 

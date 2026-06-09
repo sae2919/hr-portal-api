@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\CompanySetting;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 
 class SettingsController extends Controller
 {
@@ -16,7 +17,10 @@ class SettingsController extends Controller
      */
     public function index(): JsonResponse
     {
-        $settings = CompanySetting::all()->pluck('value', 'key');
+        // Cache for 5 minutes — settings almost never change mid-session
+        $settings = Cache::remember('company_settings', 300, function () {
+            return CompanySetting::all()->pluck('value', 'key');
+        });
 
         return response()->json($settings);
     }
@@ -64,6 +68,8 @@ class SettingsController extends Controller
         } elseif ($request->has('company_logo') && !is_null($request->company_logo)) {
             CompanySetting::set('company_logo', $request->company_logo);
         }
+
+        Cache::forget('company_settings'); // bust settings cache on any update
 
         return response()->json(['message' => 'Settings updated successfully.']);
     }

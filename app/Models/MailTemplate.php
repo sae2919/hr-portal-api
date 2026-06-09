@@ -13,6 +13,7 @@ class MailTemplate extends Model
 
     protected $fillable = [
         'template_name',
+        'type',
         'subject',
         'body',
         'style',

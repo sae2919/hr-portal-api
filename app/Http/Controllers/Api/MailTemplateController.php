@@ -39,6 +39,10 @@ class MailTemplateController extends Controller
         $search = $request->string('search')->trim();
         $query = MailTemplate::query();
 
+        if ($request->has('type')) {
+            $query->where('type', $request->type);
+        }
+
         if ($search->isNotEmpty()) {
             $query->where(function ($q) use ($search) {
                 $q->where('template_name', 'like', "%{$search}%")
@@ -63,11 +67,16 @@ class MailTemplateController extends Controller
 
         $validated = $request->validate([
             'template_name' => ['required', 'string', 'max:255', 'unique:mail_templates,template_name'],
+            'type'          => ['nullable', 'string', 'max:50'],
             'subject'       => ['required', 'string'],
             'body'          => ['nullable', 'string'],
             'style'         => ['nullable', 'string'],
             'active_status' => ['nullable', 'integer', 'in:0,1'],
         ]);
+
+        if (empty($validated['type'])) {
+            $validated['type'] = 'mail';
+        }
 
         // Default active_status to 1 if not specified
         if (!isset($validated['active_status'])) {
@@ -111,6 +120,7 @@ class MailTemplateController extends Controller
 
         $validated = $request->validate([
             'template_name' => ['sometimes', 'required', 'string', 'max:255', 'unique:mail_templates,template_name,' . $template->id],
+            'type'          => ['nullable', 'string', 'max:50'],
             'subject'       => ['sometimes', 'required', 'string'],
             'body'          => ['nullable', 'string'],
             'style'         => ['nullable', 'string'],

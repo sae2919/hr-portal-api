@@ -255,12 +255,35 @@ class OffboardingController extends Controller
 
             try {
                 // Generate clearance letter PDF using DomPDF
-                $pdf = \PDF::loadView('pdf.exit_clearance', [
+                $salutation = 'Mr.';
+                if (isset($employee->gender) && strtolower($employee->gender) === 'female') {
+                    $salutation = 'Ms.';
+                }
+                
+                $empFullName = ($employee->first_name ?? '') . ' ' . ($employee->last_name ?? '');
+                $joiningDateFormatted = $employee->joining_date ? \Carbon\Carbon::parse($employee->joining_date)->format('d-M-Y') : '';
+                $lastDayFormatted = $offboarding->last_working_day ? \Carbon\Carbon::parse($offboarding->last_working_day)->format('d-M-Y') : '';
+                
+                $companyName = \App\Models\CompanySetting::getValue('company_name') ?? 'Techsprout AI Labs Pvt. Ltd';
+                $companyLogo = \App\Models\CompanySetting::getValue('company_logo') ?? null;
+                $designationName = $employee->designation->name ?? ($employee->designation->title ?? '-');
+
+                $variables = [
                     'offboarding' => $offboarding,
                     'employee' => $employee,
-                    'company_name' => \App\Models\CompanySetting::getValue('company_name') ?? 'Techsprout AI Labs Pvt. Ltd',
-                    'company_logo' => \App\Models\CompanySetting::getValue('company_logo') ?? null,
-                ]);
+                    'salutation' => $salutation,
+                    'employee_name' => $empFullName,
+                    'company_name' => $companyName,
+                    'company_logo' => $companyLogo,
+                    'designation' => $designationName,
+                    'joining_date' => $joiningDateFormatted,
+                    'last_working_day' => $lastDayFormatted,
+                    'employee_code' => $employee->employee_code ?? '-',
+                    'date' => \Carbon\Carbon::now()->format('d-M-Y'),
+                ];
+
+                // Generate clearance letter PDF dynamically from DB template
+                $pdf = \App\Services\DocumentService::render('exit_relieving_letter', $variables);
 
                 $filename = "Relieving_Letter_" . str_replace(' ', '_', $employee->full_name) . ".pdf";
 
@@ -325,12 +348,35 @@ class OffboardingController extends Controller
 
         $employee = $offboarding->employee;
 
-        $pdf = \PDF::loadView('pdf.exit_clearance', [
+        $salutation = 'Mr.';
+        if (isset($employee->gender) && strtolower($employee->gender) === 'female') {
+            $salutation = 'Ms.';
+        }
+        
+        $empFullName = ($employee->first_name ?? '') . ' ' . ($employee->last_name ?? '');
+        $joiningDateFormatted = $employee->joining_date ? \Carbon\Carbon::parse($employee->joining_date)->format('d-M-Y') : '';
+        $lastDayFormatted = $offboarding->last_working_day ? \Carbon\Carbon::parse($offboarding->last_working_day)->format('d-M-Y') : '';
+        
+        $companyName = \App\Models\CompanySetting::getValue('company_name') ?? 'Techsprout AI Labs Pvt. Ltd';
+        $companyLogo = \App\Models\CompanySetting::getValue('company_logo') ?? null;
+        $designationName = $employee->designation->name ?? ($employee->designation->title ?? '-');
+
+        $variables = [
             'offboarding' => $offboarding,
             'employee' => $employee,
-            'company_name' => \App\Models\CompanySetting::getValue('company_name') ?? 'Techsprout AI Labs Pvt. Ltd',
-            'company_logo' => \App\Models\CompanySetting::getValue('company_logo') ?? null,
-        ]);
+            'salutation' => $salutation,
+            'employee_name' => $empFullName,
+            'company_name' => $companyName,
+            'company_logo' => $companyLogo,
+            'designation' => $designationName,
+            'joining_date' => $joiningDateFormatted,
+            'last_working_day' => $lastDayFormatted,
+            'employee_code' => $employee->employee_code ?? '-',
+            'date' => \Carbon\Carbon::now()->format('d-M-Y'),
+        ];
+
+        // Generate clearance letter PDF dynamically from DB template
+        $pdf = \App\Services\DocumentService::render('exit_relieving_letter', $variables);
 
         $filename = "Relieving_Letter_" . str_replace(' ', '_', $employee->full_name) . ".pdf";
 

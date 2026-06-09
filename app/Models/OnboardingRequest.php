@@ -12,7 +12,7 @@ class OnboardingRequest extends Model
     
     protected $fillable = [
         'candidate_name', 'email', 'phone', 'position', 'department',
-        'joining_date', 'ctc', 'status', 'rejection_reason',
+        'joining_date', 'ctc', 'duration', 'status', 'rejection_reason',
         'approved_by', 'approved_at', 'created_by', 'personal_details',
         'access_token', 'link_expires_at', 'onboarding_type',
         'custom_heading', 'required_documents', 'optional_documents',

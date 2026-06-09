@@ -22,12 +22,31 @@ class OfferLetterController extends Controller
             'content' => 'nullable|string',
         ]);
         
-        // Generate PDF
-        $pdf = PDF::loadView('pdf.offer-letter', [
+        // Determine template based on onboarding type
+        $onboardingType = $onboardingRequest->onboarding_type;
+        $templateName = match ($onboardingType) {
+            'free_intern' => 'free_internship_offer_letter',
+            'intern'      => 'paid_internship_offer_letter',
+            default       => 'full_time_offer_letter',
+        };
+
+        $letterDate = \Carbon\Carbon::parse($request->letter_date);
+        $joiningDate = \Carbon\Carbon::parse($onboardingRequest->joining_date);
+
+        $variables = [
             'candidate' => $onboardingRequest,
-            'letter_date' => $request->letter_date,
-            'content' => $request->content,
-        ]);
+            'candidate_name' => $onboardingRequest->candidate_name,
+            'position' => $onboardingRequest->position,
+            'duration' => $onboardingRequest->duration ?? '3 months',
+            'joining_date' => $joiningDate->format('d/m/Y'),
+            'letter_date' => $letterDate->format('d-F Y'),
+            'stipend' => number_format((float)($onboardingRequest->ctc ?? 0)),
+            'acceptance_date' => $letterDate->copy()->addDays(2)->format('d-m-Y'),
+        ];
+
+        // Generate PDF dynamically from DB template
+        $pdf = \App\Services\DocumentService::render($templateName, $variables);
+
         
         $fileName = "offer_letter_{$onboardingRequest->id}_{$onboardingRequest->candidate_name}.pdf";
         $filePath = "offer_letters/{$fileName}";

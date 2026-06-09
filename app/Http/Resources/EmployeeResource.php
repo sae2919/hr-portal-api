@@ -7,10 +7,22 @@ use Illuminate\Http\Resources\Json\JsonResource;
 
 class EmployeeResource extends JsonResource
 {
+    // Cached per-request so role check doesn't hit DB once per row in a collection
+    private static ?bool $cachedIsAdmin = null;
+
     public function toArray(Request $request): array
     {
         $user = auth()->user();
-        $isAdminOrHR = $user && ($user->hasRole('super_admin') || $user->hasRole('admin') || $user->hasRole('hr'));
+
+        if (self::$cachedIsAdmin === null) {
+            self::$cachedIsAdmin = $user && (
+                $user->hasRole('super_admin') ||
+                $user->hasRole('admin') ||
+                $user->hasRole('hr')
+            );
+        }
+
+        $isAdminOrHR  = self::$cachedIsAdmin;
         $isOwnProfile = $user && ($user->employee_id === $this->id || ($user->employee && $user->employee->id === $this->id));
         $showSensitive = $isAdminOrHR || $isOwnProfile;
 

@@ -7,35 +7,35 @@ use App\Http\Resources\DepartmentResource;
 use App\Models\Department;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 
 class DepartmentController extends Controller
 {
     public function index(Request $request)
     {
-        // 1. Explicitly fetch specific primitive data types to avoid passing arrays into query builders
         $perPage = $request->integer('per_page', 10);
-        $search = $request->string('search')->trim();
-        $status = $request->string('status')->trim();
+        $search  = $request->string('search')->trim();
+        $status  = $request->string('status')->trim();
 
-        $query = Department::with([
-            'parent'
-        ])->withCount('employees');
+        // Cache the full list for 60 seconds — busted on create/update/delete
+        $cacheKey = "departments_list_{$perPage}_{$search}_{$status}";
 
-        // 2. Safe check against string lengths instead of raw request object extraction
-        if ($search->isNotEmpty()) {
-            $query->where(function ($q) use ($search) {
-                $q->where('name', 'like', "%{$search}%")
-                  ->orWhere('code', 'like', "%{$search}%");
-            });
-        }
+        $departments = Cache::remember($cacheKey, 60, function () use ($perPage, $search, $status) {
+            $query = Department::with(['parent'])->withCount('employees');
 
-        if ($status->isNotEmpty()) {
-            $query->where('status', $status);
-        }
+            if ($search->isNotEmpty()) {
+                $query->where(function ($q) use ($search) {
+                    $q->where('name', 'like', "%{$search}%")
+                      ->orWhere('code', 'like', "%{$search}%");
+                });
+            }
 
-        $departments = $query
-            ->orderBy('name')
-            ->paginate($perPage); // 👈 Dynamically uses your project global per_page property 
+            if ($status->isNotEmpty()) {
+                $query->where('status', $status);
+            }
+
+            return $query->orderBy('name')->paginate($perPage);
+        });
 
         return DepartmentResource::collection($departments);
     }
@@ -57,6 +57,8 @@ class DepartmentController extends Controller
             'status'      => $request->status ?? 'active',
             'parent_id'   => $request->parent_id,
         ]);
+
+        Cache::flush(); // bust department list cache
 
         return response()->json([
             'message' => 'Department created successfully.',
@@ -92,6 +94,8 @@ class DepartmentController extends Controller
         // This explicitly blocks 'page' or 'per_page' arrays from leaking into the update process.
         $department->update($validatedData);
 
+        Cache::flush(); // bust department list cache
+
         return response()->json([
             'message' => 'Department updated successfully.',
             'data'    => new DepartmentResource($department->load('parent')),
@@ -113,6 +117,8 @@ class DepartmentController extends Controller
         }
 
         $department->delete();
+
+        Cache::flush(); // bust department list cache
 
         return response()->json([
             'message' => 'Department deleted successfully.'

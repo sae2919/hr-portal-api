@@ -343,6 +343,7 @@ class OnboardingController extends Controller
                 'employment_type' => ($onboardingRequest->onboarding_type === 'full_time') ? 'full_time' : 'intern',
                 'status' => 'active',
                 'dob' => $personal['dob'] ?? null,
+                'official_dob' => $personal['dob'] ?? null,
                 'gender' => $personal['gender'] ?? null,
                 'address' => $personal['address'] ?? null,
                 'bank_name' => $personal['bank_name'] ?? null,

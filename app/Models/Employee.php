@@ -63,10 +63,12 @@ class Employee extends Model
         'voter_id',
         'uan_number',
         'previous_designation_id',
+        'official_dob',
     ];
 
     protected $casts = [
         'dob'          => 'date',
+        'official_dob' => 'date',
         'joining_date' => 'date',
         'exit_date'    => 'date',
         'allowances'   => 'array',  // ✅ Cast allowances as JSON array

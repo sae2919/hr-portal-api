@@ -303,6 +303,110 @@ class SalaryRevisionController extends Controller
         $revision->load(['employee.department', 'employee.designation', 'approver', 'oldDesignation', 'newDesignation']);
         $employee = $revision->employee;
 
+        // Auto-generate offer letter for specific transitions
+        $generateOfferLetter = false;
+        $targetOnboardingType = null;
+
+        if ($oldEmpType === 'intern' && $oldBasic == 0 && $newEmpType === 'intern' && $newBasic > 0) {
+            // Free Intern -> Paid Intern
+            $generateOfferLetter = true;
+            $targetOnboardingType = 'intern';
+        } elseif ($oldEmpType === 'intern' && $newEmpType === 'full_time') {
+            // Intern -> Full-Time Employee
+            $generateOfferLetter = true;
+            $targetOnboardingType = 'full_time';
+        }
+
+        if ($generateOfferLetter) {
+            try {
+                // 1. Find or dynamically create OnboardingRequest
+                $onboardingRequest = \App\Models\OnboardingRequest::where('email', $employee->email)->first();
+                $salaryValue = ($targetOnboardingType === 'intern') ? $newBasic : $newGross;
+
+                if (!$onboardingRequest) {
+                    $onboardingRequest = \App\Models\OnboardingRequest::create([
+                        'candidate_name'  => $employee->full_name,
+                        'email'           => $employee->email,
+                        'phone'           => $employee->phone,
+                        'position'        => $employee->designation->title ?? 'Employee',
+                        'department'      => $employee->department->name ?? 'Staff',
+                        'joining_date'    => $effectiveDate,
+                        'ctc'             => $salaryValue,
+                        'onboarding_type' => $targetOnboardingType,
+                        'status'          => 'onboarded',
+                        'created_by'      => auth()->id() ?? 1,
+                    ]);
+                } else {
+                    $onboardingRequest->update([
+                        'onboarding_type' => $targetOnboardingType,
+                        'ctc'             => $salaryValue,
+                        'position'        => $employee->designation->title ?? $onboardingRequest->position,
+                        'joining_date'    => $effectiveDate,
+                    ]);
+                }
+
+                // 2. Render appropriate template
+                $templateName = match ($targetOnboardingType) {
+                    'free_intern' => 'free_internship_offer_letter',
+                    'intern'      => 'paid_internship_offer_letter',
+                    default       => 'full_time_offer_letter',
+                };
+
+                $variables = [
+                    'candidate'       => $onboardingRequest,
+                    'candidate_name'  => $onboardingRequest->candidate_name,
+                    'position'        => $onboardingRequest->position,
+                    'duration'        => $onboardingRequest->duration ?? '3 months',
+                    'joining_date'    => $effectiveDate->format('d/m/Y'),
+                    'letter_date'     => now()->format('d-F Y'),
+                    'stipend'         => number_format((float)($salaryValue ?? 0)),
+                    'acceptance_date' => now()->addDays(2)->format('d-m-Y'),
+                ];
+
+                $pdf = \App\Services\DocumentService::render($templateName, $variables);
+                
+                $fileName = "offer_letter_{$onboardingRequest->id}_{$onboardingRequest->candidate_name}.pdf";
+                $filePath = "offer_letters/{$fileName}";
+                
+                \Illuminate\Support\Facades\Storage::disk('public')->put($filePath, $pdf->output());
+
+                $offerLetter = \App\Models\OfferLetter::create([
+                    'onboarding_request_id' => $onboardingRequest->id,
+                    'letter_date'           => now(),
+                    'file_path'             => $filePath,
+                    'status'                => 'sent',
+                    'sent_at'               => now(),
+                    'created_by'            => auth()->id() ?? 1,
+                ]);
+
+                // 3. Dispatch job to send the email
+                $absolutePath = storage_path("app/public/{$filePath}");
+                if (file_exists($absolutePath)) {
+                    \App\Jobs\SendReusableMail::dispatch(
+                        'candidate_offer_letter_delivery',
+                        $employee->email,
+                        [
+                            'name'          => $onboardingRequest->candidate_name,
+                            'employee_name' => $onboardingRequest->candidate_name,
+                            'position'      => $onboardingRequest->position,
+                            'department'    => $onboardingRequest->department,
+                            'joining_date'  => $onboardingRequest->joining_date,
+                        ],
+                        null,
+                        [
+                            [
+                                'path' => $absolutePath,
+                                'name' => "Offer_Letter_{$onboardingRequest->candidate_name}.pdf",
+                                'mime' => 'application/pdf',
+                            ]
+                        ]
+                    );
+                }
+            } catch (\Exception $e) {
+                Log::error("Failed to automatically generate and send offer letter for employee {$employee->id} during salary revision: " . $e->getMessage());
+            }
+        }
+
         // Render blade view to PDF
         $pdf = \PDF::loadView('pdf.salary_revision', [
             'revision' => $revision,

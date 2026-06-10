@@ -123,6 +123,7 @@ class EmployeeResource extends JsonResource
                 'previous_designation' => $this->previousDesignation?->title,
                 'designation_revised_date' => $this->designation_revised_date?->toDateString(),
                 'previous_designation_joining_date' => $this->previous_designation_joining_date?->toDateString(),
+                'official_dob'     => $this->official_dob?->toDateString(),
             ]);
         }
 

@@ -112,6 +112,7 @@ class EmployeeController extends Controller
             'gender' => ['nullable', 'in:male,female,other'],
             'blood_group' => ['nullable', 'string', 'max:10'],
             'dob' => ['nullable', 'date'],
+            'official_dob' => ['nullable', 'date'],
             // Documents
             'pan_number' => ['required', 'string', 'regex:/^[A-Z]{5}[0-9]{4}[A-Z]{1}$/'],
             'aadhaar_number' => ['required', 'string', 'digits:12'],
@@ -254,9 +255,8 @@ class EmployeeController extends Controller
                 ], 422);
             }
 
-            // Only allow editing personal information and emergency contact (excluding name/email)
             $allowedFields = [
-                'phone', 'gender', 'blood_group', 'dob',
+                'phone', 'gender', 'blood_group', 'dob', 'official_dob',
                 'address', 'city', 'state', 'country', 'pincode',
                 'emergency_contact_name', 'emergency_contact_phone', 'emergency_contact_relation'
             ];
@@ -271,6 +271,7 @@ class EmployeeController extends Controller
             'gender' => ['nullable', 'in:male,female,other'],
             'blood_group' => ['nullable', 'string', 'max:10'],
             'dob' => ['nullable', 'date'],
+            'official_dob' => ['nullable', 'date'],
             'pan_number' => ['sometimes', 'nullable', 'string', 'regex:/^[A-Z]{5}[0-9]{4}[A-Z]{1}$/'],
             'aadhaar_number' => ['sometimes', 'nullable', 'string', 'digits:12'],
             'driving_license' => ['nullable', 'string'],

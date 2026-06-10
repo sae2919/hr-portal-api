@@ -11,12 +11,15 @@ class AssetAllocation extends Model
     
     protected $fillable = [
         'asset_id', 'employee_id', 'onboarding_request_id', 'allocated_date',
-        'return_date', 'status', 'condition_notes', 'return_notes', 'allocated_by'
+        'return_date', 'status', 'condition_notes', 'return_notes', 'allocated_by',
+        'charger_given', 'sim_given'
     ];
 
     protected $casts = [
         'allocated_date' => 'date',
         'return_date' => 'date',
+        'charger_given' => 'boolean',
+        'sim_given' => 'boolean',
     ];
 
     public function asset(): BelongsTo

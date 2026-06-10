@@ -12,12 +12,14 @@ class Asset extends Model
     protected $fillable = [
         'asset_code', 'name', 'type', 'brand', 'model', 'serial_number',
         'color', 'purchase_date', 'purchase_price', 'status',
-        'specifications', 'image_path'
+        'specifications', 'image_path', 'has_charger', 'has_sim'
     ];
 
     protected $casts = [
         'purchase_date' => 'date',
         'purchase_price' => 'decimal:2',
+        'has_charger' => 'boolean',
+        'has_sim' => 'boolean',
     ];
 
     protected static function boot()

@@ -1234,10 +1234,10 @@ Techsprout AI Labs Pvt. Ltd.</p>',
     <table class="salary-table">
         <thead>
             <tr>
-                <th style="width: 35%;">Earnings</th>
+                <th style="width: 35%; text-align: left;">Earnings</th>
                 <th style="width: 15%;">Master</th>
                 <th style="width: 15%;">Actual</th>
-                <th style="width: 20%;">Deductions</th>
+                <th style="width: 20%; text-align: left;">Deductions</th>
                 <th style="width: 15%;">Actual</th>
             </tr>
         </thead>

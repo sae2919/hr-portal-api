@@ -6,7 +6,7 @@
     <style>
         body {
             font-family: 'Times New Roman', Times, 'DejaVu Serif', serif;
-            font-size: 11px;
+            font-size: 10px;
             color: #000;
             line-height: 1.4;
             padding: 10px;
@@ -41,24 +41,25 @@
         }
         
         .company-name {
-            font-size: 16px;
+            font-size: 13px;
             font-weight: bold;
             margin: 0 0 3px 0;
             color: #000;
         }
         
         .company-address {
-            font-size: 9px;
+            font-size: 8px;
             color: #333;
             margin: 0;
             line-height: 1.2;
+            white-space: nowrap;
         }
         
         .payslip-title {
             text-align: center;
             font-size: 13px;
             font-weight: bold;
-            margin: 15px 0 10px 0;
+            margin: 10px 0 8px 0;
             text-transform: capitalize;
         }
         
@@ -66,13 +67,13 @@
             width: 100%;
             border-collapse: collapse;
             border: 1px solid #777;
-            margin-bottom: 20px;
+            margin-bottom: 15px;
         }
         
         .employee-details-table td {
-            padding: 5px 8px;
+            padding: 4px 8px;
             vertical-align: top;
-            font-size: 11px;
+            font-size: 10px;
         }
         
         .employee-details-table .col-left {
@@ -104,21 +105,22 @@
             width: 100%;
             border-collapse: collapse;
             border: 1px solid #777;
-            margin-bottom: 20px;
+            margin-bottom: 15px;
         }
         
         .salary-table th {
             border: 1px solid #777;
-            padding: 5px 8px;
+            padding: 4px 6px;
             font-weight: bold;
+            font-size: 9px;
             text-align: center;
             background-color: #fff;
         }
         
         .salary-table td {
             border: 1px solid #777;
-            padding: 4px 8px;
-            font-size: 10px;
+            padding: 3px 6px;
+            font-size: 9px;
             vertical-align: middle;
         }
         
@@ -133,29 +135,36 @@
         }
         
         .net-pay-section {
-            margin-top: 15px;
-            font-size: 11px;
+            margin-top: 10px;
+            font-size: 10px;
         }
         
         .net-pay-amount {
-            font-size: 11px;
+            font-size: 10px;
             font-weight: bold;
         }
         
         .net-pay-words {
-            font-size: 11px;
+            font-size: 9px;
             font-weight: bold;
             font-style: italic;
-            margin-top: 5px;
+            margin-top: 4px;
         }
         
         .footer-line {
             border-top: 1px solid #777;
-            margin-top: 25px;
-            padding-top: 5px;
+            margin-top: 20px;
+            padding-top: 4px;
             text-align: center;
-            font-size: 9px;
+            font-size: 8px;
             color: #777;
+        }
+
+        .print-date-line {
+            text-align: left;
+            font-size: 10px;
+            color: #000;
+            margin-top: 4px;
         }
     </style>
 </head>
@@ -378,7 +387,7 @@
                 @if($logoPath)
                     <img src="{{ $logoPath }}" alt="Logo" class="logo" />
                 @else
-                    <span style="font-size:24px; font-weight:bold; color:#1e3a8a;">TS</span>
+                    <span style="font-size:22px; font-weight:bold; color:#1e3a8a;">TS</span>
                 @endif
             </td>
             <td class="company-details-cell">
@@ -399,52 +408,52 @@
             <td class="col-left">
                 <table style="width: 100%; border-collapse: collapse; border: none;">
                     <tr>
-                        <td style="width: 35%; padding: 2px 0; border: none; font-weight: normal; font-size: 11px;">Name:</td>
-                        <td style="width: 65%; padding: 2px 0; border: none; font-weight: normal; font-size: 11px;">{{ $employee->first_name }} {{ $employee->last_name }}</td>
+                        <td style="width: 35%; padding: 2px 0; border: none; font-size: 10px;">Name:</td>
+                        <td style="width: 65%; padding: 2px 0; border: none; font-size: 10px;">{{ $employee->first_name }} {{ $employee->last_name }}</td>
                     </tr>
                     <tr>
-                        <td style="width: 35%; padding: 2px 0; border: none; font-weight: normal; font-size: 11px;">Joining Date:</td>
-                        <td style="width: 65%; padding: 2px 0; border: none; font-weight: normal; font-size: 11px;">{{ $employee->joining_date ? $employee->joining_date->format('d M Y') : '-' }}</td>
+                        <td style="width: 35%; padding: 2px 0; border: none; font-size: 10px;">Joining Date:</td>
+                        <td style="width: 65%; padding: 2px 0; border: none; font-size: 10px;">{{ $employee->joining_date ? $employee->joining_date->format('d M Y') : '-' }}</td>
                     </tr>
                     <tr>
-                        <td style="width: 35%; padding: 2px 0; border: none; font-weight: normal; font-size: 11px;">Designation:</td>
-                        <td style="width: 65%; padding: 2px 0; border: none; font-weight: normal; font-size: 11px;">{{ $employee->designation->title ?? '-' }}</td>
+                        <td style="width: 35%; padding: 2px 0; border: none; font-size: 10px;">Designation:</td>
+                        <td style="width: 65%; padding: 2px 0; border: none; font-size: 10px;">{{ $employee->designation->title ?? '-' }}</td>
                     </tr>
                     <tr>
-                        <td style="width: 35%; padding: 2px 0; border: none; font-weight: normal; font-size: 11px;">Department:</td>
-                        <td style="width: 65%; padding: 2px 0; border: none; font-weight: normal; font-size: 11px;">{{ $employee->department->name ?? '-' }}</td>
+                        <td style="width: 35%; padding: 2px 0; border: none; font-size: 10px;">Department:</td>
+                        <td style="width: 65%; padding: 2px 0; border: none; font-size: 10px;">{{ $employee->department->name ?? '-' }}</td>
                     </tr>
                     <tr>
-                        <td style="width: 35%; padding: 2px 0; border: none; font-weight: normal; font-size: 11px;">Location:</td>
-                        <td style="width: 65%; padding: 2px 0; border: none; font-weight: normal; font-size: 11px;">{{ $employee->city ?: 'Hyderabad' }}</td>
+                        <td style="width: 35%; padding: 2px 0; border: none; font-size: 10px;">Location:</td>
+                        <td style="width: 65%; padding: 2px 0; border: none; font-size: 10px;">{{ $employee->city ?: 'Hyderabad' }}</td>
                     </tr>
                 </table>
             </td>
             <td class="col-right">
                 <table style="width: 100%; border-collapse: collapse; border: none;">
                     <tr>
-                        <td style="width: 45%; padding: 2px 0; border: none; font-weight: normal; font-size: 11px;">Employee Code:</td>
-                        <td style="width: 55%; padding: 2px 0; border: none; font-weight: normal; font-size: 11px;">{{ $employee->employee_code }}</td>
+                        <td style="width: 45%; padding: 2px 0; border: none; font-size: 10px;">Employee ID:</td>
+                        <td style="width: 55%; padding: 2px 0; border: none; font-size: 10px;">{{ $employee->employee_code }}</td>
                     </tr>
                     <tr>
-                        <td style="width: 45%; padding: 2px 0; border: none; font-weight: normal; font-size: 11px;">Bank Name:</td>
-                        <td style="width: 55%; padding: 2px 0; border: none; font-weight: normal; font-size: 11px;">{{ $bankName }}</td>
+                        <td style="width: 45%; padding: 2px 0; border: none; font-size: 10px;">Bank Name:</td>
+                        <td style="width: 55%; padding: 2px 0; border: none; font-size: 10px;">{{ $bankName }}</td>
                     </tr>
                     <tr>
-                        <td style="width: 45%; padding: 2px 0; border: none; font-weight: normal; font-size: 11px;">Bank Account No:</td>
-                        <td style="width: 55%; padding: 2px 0; border: none; font-weight: normal; font-size: 11px;">{{ $maskedAcc }}</td>
+                        <td style="width: 45%; padding: 2px 0; border: none; font-size: 10px;">Bank Account No:</td>
+                        <td style="width: 55%; padding: 2px 0; border: none; font-size: 10px;">{{ $maskedAcc }}</td>
                     </tr>
                     <tr>
-                        <td style="width: 45%; padding: 2px 0; border: none; font-weight: normal; font-size: 11px;">PAN Number:</td>
-                        <td style="width: 55%; padding: 2px 0; border: none; font-weight: normal; font-size: 11px;">{{ $maskedPan }}</td>
+                        <td style="width: 45%; padding: 2px 0; border: none; font-size: 10px;">PAN Number:</td>
+                        <td style="width: 55%; padding: 2px 0; border: none; font-size: 10px;">{{ $maskedPan }}</td>
                     </tr>
                     <tr>
-                        <td style="width: 45%; padding: 2px 0; border: none; font-weight: normal; font-size: 11px;">Effective Work Days:</td>
-                        <td style="width: 55%; padding: 2px 0; border: none; font-weight: normal; font-size: 11px;">{{ $payroll->present_days }}</td>
+                        <td style="width: 45%; padding: 2px 0; border: none; font-size: 10px;">Effective Work Days:</td>
+                        <td style="width: 55%; padding: 2px 0; border: none; font-size: 10px;">{{ $payroll->present_days }}</td>
                     </tr>
                     <tr>
-                        <td style="width: 45%; padding: 2px 0; border: none; font-weight: normal; font-size: 11px;">LOP:</td>
-                        <td style="width: 55%; padding: 2px 0; border: none; font-weight: normal; font-size: 11px;">{{ (int)($payroll->lop_days ?? 0) }}</td>
+                        <td style="width: 45%; padding: 2px 0; border: none; font-size: 10px;">LOP:</td>
+                        <td style="width: 55%; padding: 2px 0; border: none; font-size: 10px;">{{ (int)($payroll->lop_days ?? 0) }}</td>
                     </tr>
                 </table>
             </td>
@@ -455,10 +464,10 @@
     <table class="salary-table">
         <thead>
             <tr>
-                <th style="width: 35%;">Earnings</th>
+                <th style="width: 35%; text-align: left;">Earnings</th>
                 <th style="width: 15%;">Master</th>
                 <th style="width: 15%;">Actual</th>
-                <th style="width: 20%;">Deductions</th>
+                <th style="width: 20%; text-align: left;">Deductions</th>
                 <th style="width: 15%;">Actual</th>
             </tr>
         </thead>
@@ -481,7 +490,7 @@
             @endfor
             
             <!-- Totals row -->
-            <tr style="background-color: #fff; font-weight: bold;">
+            <tr style="background-color: #fff; font-weight: bold; font-size: 9px;">
                 <td>Total Earnings:INR.:</td>
                 <td class="amount">{{ number_format($masterGross, 2) }}</td>
                 <td class="amount">{{ number_format($payroll->gross_salary, 2) }}</td>
@@ -493,13 +502,18 @@
 
     <!-- Net Pay & Words -->
     <div class="net-pay-section">
-        <div>Net Pay for the month&nbsp;&nbsp;<span class="net-pay-amount">{{ number_format($payroll->net_salary, 2) }}</span></div>
+        <div>Net Pay for the month:&nbsp;&nbsp;<span class="net-pay-amount">{{ number_format($payroll->net_salary, 2) }}</span></div>
         <div class="net-pay-words">({{ $netPayWords }})</div>
     </div>
 
     <!-- Footer System Generated disclaimer -->
     <div class="footer-line">
         This is a system generated payslip and does not require a signature
+    </div>
+
+    <!-- Print Date at bottom -->
+    <div class="print-date-line">
+        Print Date:{{ now()->format('d M Y, h:i A') }}
     </div>
 
 </body>

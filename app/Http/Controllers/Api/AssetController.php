@@ -69,6 +69,8 @@ class AssetController extends Controller
             'purchase_date' => 'nullable|date',
             'purchase_price' => 'nullable|numeric|min:0',
             'specifications' => 'nullable|string',
+            'has_charger' => 'nullable|boolean',
+            'has_sim' => 'nullable|boolean',
         ]);
         
         $asset = Asset::create($request->all());
@@ -106,6 +108,8 @@ class AssetController extends Controller
             'serial_number' => 'nullable|string|unique:assets,serial_number,' . $asset->id,
             'status' => 'sometimes|in:available,assigned,maintenance,scrapped',
             'specifications' => 'nullable|string',
+            'has_charger' => 'nullable|boolean',
+            'has_sim' => 'nullable|boolean',
         ]);
         
         $asset->update($request->all());
@@ -126,6 +130,8 @@ class AssetController extends Controller
             'onboarding_request_id' => 'required_without:employee_id|nullable|exists:onboarding_requests,id',
             'employee_id' => 'required_without:onboarding_request_id|nullable|exists:employees,id',
             'condition_notes' => 'nullable|string',
+            'charger_given' => 'nullable|boolean',
+            'sim_given' => 'nullable|boolean',
         ]);
         
         if ($asset->status !== 'available') {
@@ -146,6 +152,8 @@ class AssetController extends Controller
                 'status' => 'allocated',
                 'condition_notes' => $request->condition_notes,
                 'allocated_by' => auth()->id(),
+                'charger_given' => $request->charger_given,
+                'sim_given' => $request->sim_given,
             ]);
             
             $asset->update(['status' => 'assigned']);

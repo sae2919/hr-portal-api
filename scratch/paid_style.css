@@ -1,0 +1,69 @@
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;700&family=Montserrat:wght@400;700&display=swap");
+        @page {
+            margin: 115pt 37pt 60pt 37pt;
+        }
+        body {
+            font-family: "Inter", "Montserrat", "DejaVu Sans", sans-serif;
+            font-size: 11pt;
+            color: #000000;
+            line-height: 1.57;
+            margin: 0;
+            padding: 0;
+        }
+        /* ── Repeating Background Graphics ── */
+        .header-bg {
+            position: fixed;
+            top: -115pt;
+            left: -37pt;
+            right: -37pt;
+            height: 22pt;
+            z-index: -100;
+        }
+        .footer-bg {
+            position: fixed;
+            bottom: -60pt;
+            left: -37pt;
+            right: -37pt;
+            height: 28.4pt;
+            z-index: -100;
+        }
+        /* ── Header ── */
+        .header {
+            position: fixed;
+            top: -115pt;
+            left: 0;
+            right: 0;
+            height: 114.5pt;
+            border-bottom: 1.5pt solid #28326e;
+        }
+        .header table { width: 100%; border-collapse: collapse; }
+        .header td   { padding: 0; vertical-align: top; }
+        .company-address {
+            font-size: 9.5pt;
+            color: #28326e;
+            text-align: right;
+            line-height: 1.3;
+        }
+        .company-address a { color: #28326e; text-decoration: underline; font-weight: normal; }
+
+        /* ── Content Body Wrapper ── */
+        .content-body {
+            margin-left: 13pt;
+        }
+
+        /* ── Paragraphs and Sections ── */
+        .paragraph    { margin-bottom: 17.3pt; text-align: justify; line-height: 1.57; }
+        .section-title {
+            font-size: 11pt;
+            font-weight: bold;
+            margin-top: 17.3pt;
+            margin-bottom: 17.3pt;
+            color: #000000;
+            line-height: 1.57;
+        }
+        .page-break   { page-break-after: always; }
+
+        /* ── Signature ── */
+        .signature-section { margin-top: 25pt; page-break-inside: avoid; }
+        .address-block { font-size: 11pt; color: #000000; line-height: 1.4; margin-top: 10pt; }
+        .address-block a { color: #000000; text-decoration: none; font-weight: normal; }

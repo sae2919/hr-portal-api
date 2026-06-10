@@ -1,0 +1,46 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Montserrat:wght@700&display=swap');
+        @page {
+            margin: 125px 37pt 60px 37pt;
+        }
+        body {
+            font-family: 'Inter', sans-serif;
+            font-size: 11pt;
+            color: #000000;
+            line-height: 1.45;
+        }
+        /* ── Fixed repeating header on every page ── */
+        .header {
+            position: fixed;
+            top: -100px;
+            left: 0;
+            right: 0;
+            height: 80px;
+            border-bottom: 1.5pt solid #28326e;
+            padding-bottom: 8px;
+        }
+        .header table { width: 100%; border-collapse: collapse; }
+        .header td   { padding: 0; vertical-align: top; }
+        .company-address {
+            font-size: 10pt;
+            color: #28326e;
+            text-align: right;
+            line-height: 1.35;
+        }
+        .company-address a { color: #28326e; text-decoration: none; font-weight: normal; }
+
+        /* ── Body ── */
+        .paragraph    { margin-bottom: 8px; text-align: justify; }
+        .section-title {
+            font-family: 'Montserrat', sans-serif;
+            font-size: 11pt;
+            font-weight: bold;
+            margin-top: 12px;
+            margin-bottom: 3px;
+            color: #000000;
+        }
+        .page-break   { page-break-after: always; }
+
+        /* ── Signature ── */
+        .signature-section { margin-top: 20px; page-break-inside: avoid; }
+        .address-block { font-size: 11pt; color: #000000; line-height: 1.35; margin-top: 8px; }
+        .address-block a { color: #000000; text-decoration: none; font-weight: normal; }

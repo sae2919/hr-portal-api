@@ -36,6 +36,11 @@ class DocumentService
 
         // Build final HTML document with style
         $style = $template->style ?? '';
+        
+        // Dynamically resolve local font paths
+        $fontsDirUrl = 'file:///' . str_replace('\\', '/', storage_path('fonts/'));
+        $style = str_replace('local-font://', $fontsDirUrl, $style);
+        
         $html = "<!DOCTYPE html>
 <html>
 <head>
@@ -49,8 +54,34 @@ class DocumentService
 </body>
 </html>";
 
-        // Load into PDF
-        return PDF::loadHTML($html);
+        // Load into PDF using Puppeteer
+        $tempHtmlFile = sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'pdf_html_' . uniqid() . '.html';
+        $tempPdfFile = sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'pdf_out_' . uniqid() . '.pdf';
+        
+        file_put_contents($tempHtmlFile, $html);
+        
+        $process = new \Symfony\Component\Process\Process([
+            'node',
+            base_path('app/Scripts/puppeteer-pdf-generator.js'),
+            $tempHtmlFile,
+            $tempPdfFile
+        ]);
+        
+        $process->setTimeout(60);
+        $process->run();
+        
+        if (!$process->isSuccessful()) {
+            @unlink($tempHtmlFile);
+            @unlink($tempPdfFile);
+            throw new \Exception("Puppeteer PDF generation failed: " . $process->getErrorOutput());
+        }
+        
+        $pdfBytes = file_get_contents($tempPdfFile);
+        
+        @unlink($tempHtmlFile);
+        @unlink($tempPdfFile);
+        
+        return new \App\Services\PuppeteerPdfWrapper($pdfBytes);
     }
 
     /**

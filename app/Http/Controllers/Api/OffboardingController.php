@@ -268,6 +268,8 @@ class OffboardingController extends Controller
                 $companyLogo = \App\Models\CompanySetting::getValue('company_logo') ?? null;
                 $designationName = $employee->designation->name ?? ($employee->designation->title ?? '-');
 
+                $resignationDateFormatted = $offboarding->resignation_date ? ($offboarding->resignation_date instanceof \Carbon\Carbon ? $offboarding->resignation_date->format('d-M-Y') : \Carbon\Carbon::parse($offboarding->resignation_date)->format('d-M-Y')) : '';
+
                 $variables = [
                     'offboarding' => $offboarding,
                     'employee' => $employee,
@@ -278,6 +280,7 @@ class OffboardingController extends Controller
                     'designation' => $designationName,
                     'joining_date' => $joiningDateFormatted,
                     'last_working_day' => $lastDayFormatted,
+                    'resignation_date' => $resignationDateFormatted,
                     'employee_code' => $employee->employee_code ?? '-',
                     'date' => \Carbon\Carbon::now()->format('d-M-Y'),
                 ];
@@ -361,6 +364,8 @@ class OffboardingController extends Controller
         $companyLogo = \App\Models\CompanySetting::getValue('company_logo') ?? null;
         $designationName = $employee->designation->name ?? ($employee->designation->title ?? '-');
 
+        $resignationDateFormatted = $offboarding->resignation_date ? ($offboarding->resignation_date instanceof \Carbon\Carbon ? $offboarding->resignation_date->format('d-M-Y') : \Carbon\Carbon::parse($offboarding->resignation_date)->format('d-M-Y')) : '';
+
         $variables = [
             'offboarding' => $offboarding,
             'employee' => $employee,
@@ -371,6 +376,7 @@ class OffboardingController extends Controller
             'designation' => $designationName,
             'joining_date' => $joiningDateFormatted,
             'last_working_day' => $lastDayFormatted,
+            'resignation_date' => $resignationDateFormatted,
             'employee_code' => $employee->employee_code ?? '-',
             'date' => \Carbon\Carbon::now()->format('d-M-Y'),
         ];

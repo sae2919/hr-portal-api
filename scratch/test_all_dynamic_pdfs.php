@@ -61,6 +61,15 @@ foreach ($onboardingTypes as $type) {
 
 // 2. Exit/Relieving Letter
 $offboarding = OffboardingRequest::with(['employee.department', 'employee.designation'])->first();
+if (!$offboarding) {
+    $employee = \App\Models\Employee::with(['department', 'designation'])->first();
+    if ($employee) {
+        $offboarding = new OffboardingRequest();
+        $offboarding->employee_id = $employee->id;
+        $offboarding->last_working_day = \Carbon\Carbon::now()->format('Y-m-d');
+        $offboarding->setRelation('employee', $employee);
+    }
+}
 if ($offboarding) {
     $employee = $offboarding->employee;
     echo "\nTesting Exit/Relieving Letter for Employee '{$employee->full_name}'...\n";

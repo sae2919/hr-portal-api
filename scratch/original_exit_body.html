@@ -1,0 +1,89 @@
+<div class="header">
+        <table>
+            <tr>
+                <td>
+                    @if($company_logo)
+                        <img src="{{ $company_logo }}" style="max-height: 50px; max-width: 180px; object-fit: contain;" alt="Logo" />
+                    @else
+                        <div class="company-name">{{company_name}}</div>
+                    @endif
+                </td>
+                <td style="text-align: right;">
+                    <div style="font-weight: bold; color: #1e3a8a; font-size: 13px;">{{company_name}}</div>
+                    <div class="company-address">
+                        501, Manjeera Majestic Commercial,<br>
+                        JNTU Road, KPHB, Hyderabad.
+                    </div>
+                    <div class="company-website">www.techsprout.ai</div>
+                </td>
+            </tr>
+        </table>
+    </div>
+
+    <div class="date">
+        {{date}}
+    </div>
+
+    <div class="salutation">
+        {{salutation}} {{employee_name}},
+    </div>
+    
+    <div class="subject">
+        Sub : Experience Cum Relieving Letter
+    </div>
+
+    <p>
+        This is to certify that <strong>{{salutation}} {{employee_name}}</strong> was associated with <strong>{{company_name}}</strong> as 
+        <strong>{{designation}}</strong> from <strong>{{$joining_date}}</strong> to <strong>{{last_working_day}}</strong>.
+    </p>
+
+    <p>
+        During this tenure, the employee worked and carried out assigned responsibilities professionally.
+    </p>
+
+    <p>
+        We hereby confirm that <strong>{{salutation}} {{employee_name}}</strong> has been formally relieved from their services with 
+        <strong>{{company_name}}</strong>, effective <strong>{{last_working_day}}</strong>. All responsibilities have been duly completed and cleared.
+    </p>
+
+    <div class="service-record-title">
+        Your Service Record is as follows:
+    </div>
+
+    <table class="service-record-table">
+        <tr>
+            <td class="label">Employee ID:</td>
+            <td>{{employee_code}}</td>
+        </tr>
+        <tr>
+            <td class="label">Name:</td>
+            <td>{{employee_name}}</td>
+        </tr>
+        <tr>
+            <td class="label">First Designation:</td>
+            <td>{{designation}}</td>
+        </tr>
+        <tr>
+            <td class="label">Last Designation:</td>
+            <td>{{designation}}</td>
+        </tr>
+        <tr>
+            <td class="label">Date of Joining:</td>
+            <td>{{$joining_date}}</td>
+        </tr>
+        <tr>
+            <td class="label">Date of Leaving:</td>
+            <td>{{last_working_day}}</td>
+        </tr>
+    </table>
+
+    <p>
+        We wish them all the best for their future endeavors.
+    </p>
+
+    <div class="sign-off">
+        <p>Yours sincerely,</p>
+        <div class="name">Vishwanath Srirangam</div>
+        <div class="title">Founder & CEO</div>
+        <div class="company">{{company_name}}</div>
+    </div>

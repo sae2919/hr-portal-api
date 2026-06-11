@@ -26,6 +26,105 @@ class DocumentService
             throw new \Exception("Document template '{$templateName}' not found or inactive.");
         }
 
+        // Check if this template is a PDF template
+        if ($template->pdf_path) {
+            $pdfFullPath = public_path($template->pdf_path);
+            if (!file_exists($pdfFullPath)) {
+                $storageRelative = str_replace('storage/', '', $template->pdf_path);
+                $pdfFullPath = storage_path('app/public/' . $storageRelative);
+            }
+
+            if (!file_exists($pdfFullPath)) {
+                throw new \Exception("Template PDF file not found at " . $pdfFullPath);
+            }
+
+            $fields = $template->pdf_fields ?? [];
+            $pdf = new \setasign\Fpdi\Fpdi();
+            
+            $pageCount = $pdf->setSourceFile($pdfFullPath);
+            
+            for ($pageNo = 1; $pageNo <= $pageCount; $pageNo++) {
+                $templateId = $pdf->importPage($pageNo);
+                $size = $pdf->getTemplateSize($templateId);
+                
+                $pdf->AddPage($size['orientation'], [$size['width'], $size['height']]);
+                $pdf->useTemplate($templateId);
+                
+                foreach ($fields as $field) {
+                    $fieldPage = isset($field['page']) ? (int)$field['page'] : 1;
+                    if ($fieldPage !== $pageNo) {
+                        continue;
+                    }
+                    
+                    $variable = $field['variable'] ?? '';
+                    $value = $variable;
+                    
+                    // Replace values
+                    foreach ($variables as $vKey => $vVal) {
+                        if (is_array($vVal) || is_object($vVal)) {
+                            continue;
+                        }
+                        $value = str_replace('{{' . $vKey . '}}', (string)$vVal, $value);
+                    }
+                    
+                    // Clean up braces if direct variable matching
+                    if (str_starts_with($value, '{{') && str_ends_with($value, '}}')) {
+                        $cleanKey = trim($value, '{}');
+                        if (array_key_exists($cleanKey, $variables)) {
+                            $value = (string)$variables[$cleanKey];
+                        } else {
+                            $value = '';
+                        }
+                    }
+
+                    // Convert UTF-8 to ISO-8859-1 for FPDF compatibility
+                    $value = str_replace('₹', 'Rs.', $value);
+                    if (function_exists('iconv')) {
+                        $value = @iconv('UTF-8', 'ISO-8859-1//TRANSLIT', $value);
+                    }
+                    
+                    $x = isset($field['x']) ? (float)$field['x'] : 0.0;
+                    $y = isset($field['y']) ? (float)$field['y'] : 0.0;
+                    $w = isset($field['width']) ? (float)$field['width'] : 0.0;
+                    $h = isset($field['height']) ? (float)$field['height'] : 0.0;
+                    
+                    $fontSize = isset($field['font_size']) ? (float)$field['font_size'] : 11.0;
+                    $fontStyle = isset($field['font_style']) ? $field['font_style'] : '';
+                    $align = isset($field['align']) ? $field['align'] : 'L';
+                    $mask = isset($field['mask']) ? (bool)$field['mask'] : false;
+                    $color = isset($field['color']) ? $field['color'] : '#000000';
+                    
+                    if ($mask && $w > 0 && $h > 0) {
+                        $pdf->SetFillColor(255, 255, 255);
+                        $pdf->Rect($x, $y, $w, $h, 'F');
+                    }
+                    
+                    $pdf->SetFont('Helvetica', $fontStyle, $fontSize);
+                    
+                    // Color processing
+                    if (str_starts_with($color, '#')) {
+                        $hex = substr($color, 1);
+                        if (strlen($hex) === 6) {
+                            $r = hexdec(substr($hex, 0, 2));
+                            $g = hexdec(substr($hex, 2, 2));
+                            $b = hexdec(substr($hex, 4, 2));
+                            $pdf->SetTextColor($r, $g, $b);
+                        } else {
+                            $pdf->SetTextColor(0, 0, 0);
+                        }
+                    } else {
+                        $pdf->SetTextColor(0, 0, 0);
+                    }
+                    
+                    $pdf->SetXY($x, $y);
+                    $pdf->Cell($w > 0 ? $w : 0, $h > 0 ? $h : $fontSize/2, $value, 0, 0, $align);
+                }
+            }
+            
+            $pdfBytes = $pdf->Output('S');
+            return new \App\Services\PuppeteerPdfWrapper($pdfBytes);
+        }
+
         // Compile the body using Blade::render
         try {
             $compiledBody = Blade::render($template->body, $variables);
@@ -251,6 +350,27 @@ class DocumentService
             'maxRows' => $maxRows,
             'netPayWords' => $netPayWords,
             'lopDeduction' => $lopDeduction,
+            // Flat keys for background PDF coordinate overlay mode
+            'employee_name' => ($employee->first_name ?? '') . ' ' . ($employee->last_name ?? ''),
+            'employee_code' => $employee->employee_code ?? '-',
+            'designation' => $employee->designation->title ?? ($employee->designation->name ?? '-'),
+            'department' => $employee->department->name ?? '-',
+            'joining_date' => $employee->joining_date ? ($employee->joining_date instanceof \Carbon\Carbon ? $employee->joining_date->format('d M Y') : \Carbon\Carbon::parse($employee->joining_date)->format('d M Y')) : '-',
+            'month' => $monthName,
+            'year' => $payroll->year,
+            'net_salary' => number_format($payroll->net_salary, 2),
+            'present_days' => $payroll->present_days,
+            'lop_days' => (int)($payroll->lop_days ?? 0),
+            'lop_deduction' => number_format($lopDeduction, 2),
+            'basic_salary' => number_format($actualBasic, 2),
+            'hra' => number_format($actualHra, 2),
+            'allowances' => number_format($actualAllowances, 2),
+            'gross_salary' => number_format($payroll->gross_salary, 2),
+            'total_deductions' => number_format($payroll->total_deductions, 2),
+            'net_pay_words' => $netPayWords,
+            'company_name' => $companyName,
+            'company_address' => $companyAddress,
+            'date' => \Carbon\Carbon::now()->format('d-M-Y'),
         ];
     }
 

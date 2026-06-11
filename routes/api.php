@@ -103,6 +103,7 @@ Route::prefix('v1')->group(function () {
         // ──────────────────────────────────────
         Route::apiResource('departments', DepartmentController::class);
         Route::apiResource('designations', DesignationController::class);
+        Route::get('mail-templates/{id}/preview-pdf', [MailTemplateController::class, 'previewPdf']);
         Route::apiResource('mail-templates', MailTemplateController::class);
 
         // ──────────────────────────────────────

@@ -17,10 +17,13 @@ class MailTemplate extends Model
         'subject',
         'body',
         'style',
+        'pdf_path',
+        'pdf_fields',
         'active_status',
     ];
 
     protected $casts = [
         'active_status' => 'integer',
+        'pdf_fields' => 'array',
     ];
 }

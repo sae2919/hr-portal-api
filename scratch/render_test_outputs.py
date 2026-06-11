@@ -22,5 +22,6 @@ def render_pdf_to_images(pdf_name, prefix):
 render_pdf_to_images("test_offer_free_intern_dynamic.pdf", "test_free_intern")
 render_pdf_to_images("test_offer_intern_dynamic.pdf", "test_paid_intern")
 render_pdf_to_images("test_offer_full_time_dynamic.pdf", "test_full_time")
+render_pdf_to_images("test_exit_dynamic.pdf", "test_exit")
 
 print("Rendering complete!")

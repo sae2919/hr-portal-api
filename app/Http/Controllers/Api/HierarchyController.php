@@ -91,6 +91,7 @@ class HierarchyController extends Controller
                 'id' => $employee->id,
                 'name' => $employee->full_name,
                 'designation' => $employee->designation?->name,
+                'department' => $employee->department?->name,
                 'position_level' => $employee->position_level ?? 'staff',
             ]
         ]);

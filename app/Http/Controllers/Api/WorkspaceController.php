@@ -111,14 +111,13 @@ class WorkspaceController extends Controller
             'designation' => $designationTitle,
         ];
 
-        // ── Manager / Team Lead Stats (department-scoped) ─────────────────────
-        if (in_array($roleTier, ['manager', 'team_lead']) && $deptId) {
+        // ── Manager / Team Lead Stats (reporting hierarchy scoped) ─────────────
+        if (in_array($roleTier, ['manager', 'team_lead']) && $employee) {
             $today = Carbon::today();
 
             $deptEmployeeIds = Schema::hasTable('employees')
                 ? DB::table('employees')
-                    ->where('department_id', $deptId)
-                    ->when($employee, fn($q) => $q->where('id', '!=', $employee->id))
+                    ->where('reporting_to', $employee->id)
                     ->pluck('id')
                 : collect();
 
@@ -169,13 +168,11 @@ class WorkspaceController extends Controller
         if ($roleTier === 'sales_manager') {
             $today = Carbon::today();
 
-            $salesEmployeeIds = collect();
-            if ($deptId && Schema::hasTable('employees')) {
-                $salesEmployeeIds = DB::table('employees')
-                    ->where('department_id', $deptId)
-                    ->when($employee, fn($q) => $q->where('id', '!=', $employee->id))
-                    ->pluck('id');
-            }
+            $salesEmployeeIds = Schema::hasTable('employees') && $employee
+                ? DB::table('employees')
+                    ->where('reporting_to', $employee->id)
+                    ->pluck('id')
+                : collect();
 
             $teamCount = $salesEmployeeIds->count();
 

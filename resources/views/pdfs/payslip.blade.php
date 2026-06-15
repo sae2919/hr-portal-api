@@ -109,19 +109,29 @@
         }
         
         .salary-table th {
-            border: 1px solid #777;
+            border: none;
+            border-bottom: 1px solid #777;
             padding: 4px 6px;
             font-weight: bold;
             font-size: 9px;
             text-align: center;
             background-color: #fff;
         }
+        .salary-table th:nth-child(4) {
+            border-left: 1px solid #777;
+        }
         
         .salary-table td {
-            border: 1px solid #777;
+            border: none;
             padding: 3px 6px;
             font-size: 9px;
             vertical-align: middle;
+        }
+        .salary-table td:nth-child(4) {
+            border-left: 1px solid #777;
+        }
+        .salary-table tr.total-row td {
+            border-top: 1px solid #777;
         }
         
         .salary-table .separator {
@@ -271,28 +281,39 @@
         $lopDeduction = (float)($payroll->lop_deduction ?? 0);
         $rightRows = [];
 
-        // Always show LOP Deduction first if there are LOP days
-        if ($lopDeduction > 0) {
-            $rightRows[] = ['label' => 'LOP', 'actual' => $lopDeduction];
-        }
-
         if (!$isIntern) {
+            // First, find and add Prof Tax
+            $hasProfTax = false;
             foreach ($payroll->items->where('type', 'deduction') as $item) {
                 $label = $item->name;
                 if (str_contains(strtolower($label), 'prof') || str_contains(strtolower($label), 'professional')) {
                     $label = 'Prof Tax';
+                    $rightRows[] = ['label' => $label, 'actual' => $item->amount];
+                    $hasProfTax = true;
                 }
-                $rightRows[] = ['label' => $label, 'actual' => $item->amount];
             }
-            
-            if (empty($rightRows)) {
+
+            if (!$hasProfTax) {
                 $rightRows[] = ['label' => 'Prof Tax', 'actual' => 0];
             }
-        } else {
-            // For interns with no LOP, keep a blank row for alignment
-            if ($lopDeduction == 0) {
-                $rightRows[] = ['label' => '', 'actual' => null];
+
+            // Then, add other deductions (excluding Prof Tax)
+            foreach ($payroll->items->where('type', 'deduction') as $item) {
+                $label = $item->name;
+                if (!str_contains(strtolower($label), 'prof') && !str_contains(strtolower($label), 'professional')) {
+                    $rightRows[] = ['label' => $label, 'actual' => $item->amount];
+                }
             }
+        }
+
+        // Then add LOP
+        if ($lopDeduction > 0) {
+            $rightRows[] = ['label' => 'LOP', 'actual' => $lopDeduction];
+        }
+
+        if ($isIntern && empty($rightRows)) {
+            // For interns with no LOP, keep a blank row for alignment
+            $rightRows[] = ['label' => '', 'actual' => null];
         }
 
         // Row balancing
@@ -490,7 +511,7 @@
             @endfor
             
             <!-- Totals row -->
-            <tr style="background-color: #fff; font-weight: bold; font-size: 9px;">
+            <tr class="total-row" style="background-color: #fff; font-weight: bold; font-size: 9px;">
                 <td>Total Earnings:INR.:</td>
                 <td class="amount">{{ number_format($masterGross, 2) }}</td>
                 <td class="amount">{{ number_format($payroll->gross_salary, 2) }}</td>

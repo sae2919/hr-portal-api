@@ -162,10 +162,20 @@ class LeaveController extends Controller
                                ->where('year', $startDate->year)
                                ->first();
 
+        // Calculate pending days of this leave type in the current year to validate available balance
+        $pendingDays = DB::table('leaves')
+            ->where('employee_id', $request->employee_id)
+            ->where('leave_type_id', $request->leave_type_id)
+            ->where('status', 'pending')
+            ->whereYear('start_date', $startDate->year)
+            ->sum('days');
+
+        $availableDays = ($balance ? $balance->remaining_days : 0) - $pendingDays;
+
         if (!$isCompOffClaim) {
-            if (!$balance || $balance->remaining_days < $days) {
+            if ($availableDays < $days) {
                 return response()->json([
-                    'message' => "Insufficient leave balance. Available: " . ($balance ? $balance->remaining_days : 0) . " days.",
+                    'message' => "Insufficient leave balance. Available (excluding pending requests): " . max(0, $availableDays) . " days.",
                 ], 422);
             }
         }
@@ -197,8 +207,8 @@ class LeaveController extends Controller
                 'is_comp_off_claim' => $isCompOffClaim,
             ]);
 
-            // Only deduct balance immediately if this is NOT a Comp Off claim
-            if (!$isCompOffClaim) {
+            // Only deduct balance immediately if this is NOT a Comp Off claim AND is accepted/approved on store
+            if (!$isCompOffClaim && $status === 'approved') {
                 LeaveBalance::where('employee_id', $request->employee_id)
                             ->where('leave_type_id', $request->leave_type_id)
                             ->where('year', $startDate->year)
@@ -288,6 +298,17 @@ class LeaveController extends Controller
                     );
                     $balance->increment('total_days', $leave->days);
                     $balance->increment('remaining_days', $leave->days);
+                } else {
+                    // Regular taken leave: Deduct balance upon approval
+                    $year = Carbon::parse($leave->start_date)->year;
+                    LeaveBalance::where('employee_id', $leave->employee_id)
+                                ->where('leave_type_id', $leave->leave_type_id)
+                                ->where('year', $year)
+                                ->increment('used_days', $leave->days);
+                    LeaveBalance::where('employee_id', $leave->employee_id)
+                                ->where('leave_type_id', $leave->leave_type_id)
+                                ->where('year', $year)
+                                ->decrement('remaining_days', $leave->days);
                 }
             });
 
@@ -360,19 +381,6 @@ class LeaveController extends Controller
                 'approved_by'                 => auth()->id(),
                 'approved_at'                 => now(),
             ]);
-
-            // Refund balance on TL rejection ONLY if not a Comp Off claim
-            if (!$leave->is_comp_off_claim) {
-                $year = Carbon::parse($leave->start_date)->year;
-                LeaveBalance::where('employee_id', $leave->employee_id)
-                            ->where('leave_type_id', $leave->leave_type_id)
-                            ->where('year', $year)
-                            ->decrement('used_days', $leave->days);
-                LeaveBalance::where('employee_id', $leave->employee_id)
-                            ->where('leave_type_id', $leave->leave_type_id)
-                            ->where('year', $year)
-                            ->increment('remaining_days', $leave->days);
-            }
         });
 
         // Trigger template mail to employee for Team Lead rejection
@@ -439,18 +447,16 @@ class LeaveController extends Controller
                 $balance->increment('total_days', $leave->days);
                 $balance->increment('remaining_days', $leave->days);
             } else {
-                if ($wasOverride) {
-                    // Re-deduct balance since TL rejection had refunded it
-                    $year = Carbon::parse($leave->start_date)->year;
-                    LeaveBalance::where('employee_id', $leave->employee_id)
-                                ->where('leave_type_id', $leave->leave_type_id)
-                                ->where('year', $year)
-                                ->increment('used_days', $leave->days);
-                    LeaveBalance::where('employee_id', $leave->employee_id)
-                                ->where('leave_type_id', $leave->leave_type_id)
-                                ->where('year', $year)
-                                ->decrement('remaining_days', $leave->days);
-                }
+                // Regular taken leave: Deduct balance upon approval
+                $year = Carbon::parse($leave->start_date)->year;
+                LeaveBalance::where('employee_id', $leave->employee_id)
+                            ->where('leave_type_id', $leave->leave_type_id)
+                            ->where('year', $year)
+                            ->increment('used_days', $leave->days);
+                LeaveBalance::where('employee_id', $leave->employee_id)
+                            ->where('leave_type_id', $leave->leave_type_id)
+                            ->where('year', $year)
+                            ->decrement('remaining_days', $leave->days);
             }
         });
 
@@ -501,19 +507,6 @@ class LeaveController extends Controller
                 'approved_by'      => auth()->id(),
                 'approved_at'      => now(),
             ]);
-
-            // Only refund if not already refunded by TL rejection AND not a Comp Off claim
-            if ($leave->getOriginal('status') === 'pending' && !$leave->is_comp_off_claim) {
-                $year = Carbon::parse($leave->start_date)->year;
-                LeaveBalance::where('employee_id', $leave->employee_id)
-                            ->where('leave_type_id', $leave->leave_type_id)
-                            ->where('year', $year)
-                            ->decrement('used_days', $leave->days);
-                LeaveBalance::where('employee_id', $leave->employee_id)
-                            ->where('leave_type_id', $leave->leave_type_id)
-                            ->where('year', $year)
-                            ->increment('remaining_days', $leave->days);
-            }
         });
 
         // Trigger template mail to employee for final rejection
@@ -550,17 +543,6 @@ class LeaveController extends Controller
         }
 
         DB::transaction(function () use ($leave) {
-            if ($leave->status === 'pending' && !$leave->is_comp_off_claim) {
-                $year = Carbon::parse($leave->start_date)->year;
-                LeaveBalance::where('employee_id', $leave->employee_id)
-                            ->where('leave_type_id', $leave->leave_type_id)
-                            ->where('year', $year)
-                            ->decrement('used_days', $leave->days);
-                LeaveBalance::where('employee_id', $leave->employee_id)
-                            ->where('leave_type_id', $leave->leave_type_id)
-                            ->where('year', $year)
-                            ->increment('remaining_days', $leave->days);
-            }
             $leave->delete();
         });
 

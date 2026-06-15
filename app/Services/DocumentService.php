@@ -295,28 +295,39 @@ class DocumentService
         $lopDeduction = (float)($payroll->lop_deduction ?? 0);
         $rightRows = [];
 
-        // Always show LOP Deduction first if there are LOP days
-        if ($lopDeduction > 0) {
-            $rightRows[] = ['label' => 'LOP', 'actual' => $lopDeduction];
-        }
-
         if (!$isIntern) {
+            // First, find and add Prof Tax
+            $hasProfTax = false;
             foreach ($payroll->items->where('type', 'deduction') as $item) {
                 $label = $item->name;
                 if (str_contains(strtolower($label), 'prof') || str_contains(strtolower($label), 'professional')) {
                     $label = 'Prof Tax';
+                    $rightRows[] = ['label' => $label, 'actual' => $item->amount];
+                    $hasProfTax = true;
                 }
-                $rightRows[] = ['label' => $label, 'actual' => $item->amount];
             }
-            
-            if (empty($rightRows)) {
+
+            if (!$hasProfTax) {
                 $rightRows[] = ['label' => 'Prof Tax', 'actual' => 0];
             }
-        } else {
-            // For interns with no LOP, keep a blank row for alignment
-            if ($lopDeduction == 0) {
-                $rightRows[] = ['label' => '', 'actual' => null];
+
+            // Then, add other deductions (excluding Prof Tax)
+            foreach ($payroll->items->where('type', 'deduction') as $item) {
+                $label = $item->name;
+                if (!str_contains(strtolower($label), 'prof') && !str_contains(strtolower($label), 'professional')) {
+                    $rightRows[] = ['label' => $label, 'actual' => $item->amount];
+                }
             }
+        }
+
+        // Then add LOP
+        if ($lopDeduction > 0) {
+            $rightRows[] = ['label' => 'LOP', 'actual' => $lopDeduction];
+        }
+
+        if ($isIntern && empty($rightRows)) {
+            // For interns with no LOP, keep a blank row for alignment
+            $rightRows[] = ['label' => '', 'actual' => null];
         }
 
         // Row balancing

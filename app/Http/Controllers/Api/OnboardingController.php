@@ -84,6 +84,7 @@ class OnboardingController extends Controller
             'required_documents' => 'nullable|array',
             'optional_documents' => 'nullable|array',
             'custom_document_labels' => 'nullable|array',
+            'expiry_hours' => 'nullable|integer|min:1',
         ]);
         
         $onboardingType = $request->onboarding_type ?: 'full_time';
@@ -122,6 +123,7 @@ class OnboardingController extends Controller
                 'required_documents' => $requiredDocs,
                 'optional_documents' => $optionalDocs,
                 'custom_document_labels' => $request->custom_document_labels,
+                'link_expires_at' => now()->addHours((int) $request->input('expiry_hours', 48)),
             ]);
             
             // Create default onboarding tasks

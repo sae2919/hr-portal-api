@@ -552,6 +552,7 @@ public function worksheet(Request $request): JsonResponse
             'records.*.note'           => ['nullable', 'string', 'max:500'],
         ]);
 
+        $user         = auth()->user();
         $date         = $request->date;
         $updatedCount = 0;
         $myEmployeeId = ($this->isManager() || $this->isTeamLead()) ? $user->employee?->id : null;

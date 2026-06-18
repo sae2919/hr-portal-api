@@ -177,6 +177,9 @@ class PayrollController extends Controller
             if ($payroll->employee_id !== $employeeId) {
                 return response()->json(['message' => 'Unauthorized.'], 403);
             }
+            if ($payroll->status !== 'paid') {
+                return response()->json(['message' => 'Payslip is not yet released.'], 403);
+            }
         }
 
         $payroll->load(['employee.department', 'employee.designation', 'salaryStructure', 'items']);

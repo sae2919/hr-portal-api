@@ -12,11 +12,12 @@ class PayslipController extends Controller
     {
         $user = auth()->user();
 
-        // ── DOWNLOAD SECURITY CHECK ──
-        // Allow the download if the user is an admin OR if the payroll belongs to them
-        if (!$user->is_admin) {
+        if ($user->role !== 'admin' && !$user->is_admin) {
             if (!$user->employee || $payroll->employee_id !== $user->employee->id) {
                 abort(403, 'You are not authorized to view or download this payslip.');
+            }
+            if ($payroll->status !== 'paid') {
+                abort(403, 'Payslip is not available for download until marked as paid.');
             }
         }
 

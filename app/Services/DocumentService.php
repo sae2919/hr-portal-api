@@ -161,7 +161,7 @@ class DocumentService
         
         $process = new \Symfony\Component\Process\Process([
             'node',
-            base_path('app/Scripts/puppeteer-pdf-generator.js'),
+            base_path('scripts/puppeteer-pdf-generator.js'),
             $tempHtmlFile,
             $tempPdfFile
         ]);
